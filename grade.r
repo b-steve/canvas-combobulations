@@ -71,14 +71,18 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
 
     ## Getting peer-assessment information.
     url <- paste0(paste(domain, "/api/v1", "courses", course.id, "rubrics", rubric.id, sep = "/"),
-                  "?", "include=peer_assessments")
+                  "?", "include=peer_assessments&style=full")
     rubric.info <- get.data(url)
     pr.assessments.df <- rubric.info$assessments
-    
     ## Keeping only the assessments from the assignment we want.
     pr.assessments.df <-
         pr.assessments.df[pr.assessments.df$rubric_association_id == rubric.association.id, ]
-
+    ## Separating out the data frame from the data list.
+    pr.assessments.data <- pr.assessments.df$data
+    pr.assessments.df <- pr.assessments.df[, names(pr.assessments.df) != "data" &
+                                             names(pr.assessments.df) != "rubric_association"]
+    pr.items.df <- t(sapply(pr.assessments.data, function(x) x$points))
+    n.items <- ncol(pr.items.df)
     ## Combining the completion and assessment data frame and adding student/assessor names.
     n.pas <- nrow(pr.df)
     n.completed <- nrow(pr.assessments.df)
@@ -87,13 +91,18 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     student.name <- all.names[as.character(pr.df$user_id)]
     assessor.name <- all.names[as.character(pr.df$assessor_id)]
     score <- rep(NA, n.pas)
+    item.scores <- matrix(NA, nrow = n.pas, ncol = n.items)
     for (i in 1:n.completed){
         score[pr.df$asset_id == pr.assessments.df$artifact_id[i] &
               pr.df$assessor_id == pr.assessments.df$assessor_id[i]] <- pr.assessments.df$score[i]
+        item.scores[pr.df$asset_id == pr.assessments.df$artifact_id[i] &
+              pr.df$assessor_id == pr.assessments.df$assessor_id[i], ] <- pr.items.df[i, ]
     }
     pr.df <- data.frame(pr.df, student_name = student.name,
                         assessor_name = assessor.name, score = score)
     pr.df <- pr.df[, c(2, 6:9)]
+    colnames(item.scores) <- paste0("item", 1:n.items)
+    pr.df <- data.frame(pr.df, item.scores)
     
     ## Getting group category information.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
