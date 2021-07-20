@@ -38,7 +38,7 @@ grade.fun <- function(group, individual){
 ## grade.fun: A function to determine grades based on a group assessment and peer assessments.
 ## domain: The Canvas domain for your institution.
 ## course.id: The Canvas ID for the course.
-calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun, domain = "https://canvas.auckland.ac.nz", course.id = 62489){
+calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun, domain = "https://canvas.auckland.ac.nz", course.id){
     ## Getting student list.
     url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
     people.df <- get.data(url)
@@ -156,4 +156,31 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     }
     individual.df$final.grade <- final.grade
     list(individual = individual.df, pr = pr.df)
+}
+
+## A function to randomly allocate students to groups.
+allocate <- function(stream, group.size, start.letter = "A", domain = "https://canvas.auckland.ac.nz", course.id){
+    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+    groups.df <- get.data(url)
+    if (stream == "tuesday"){
+        group.id <- groups.df$id[groups.df$name == "STATS/DATASCI 399 - Tuesday Stream"]
+    } else if (stream == "friday"){
+        group.id <- groups.df$id[groups.df$name == "STATS/DATASCI 399 - Friday Stream"]   
+    } else if (stream == "online"){
+        group.id <- groups.df$id[groups.df$name == "STATS/DATASCI 399 - Online"]
+    } else if (stream == "swu"){
+        group.id <- groups.df$id[groups.df$name == "DATASCI 399 - Online SWU"]
+    }
+    url <- paste(domain, "/api/v1", "groups", group.id, "users", sep = "/")
+    student.names <- get.data(url)$name
+    n.students <- length(student.names)
+    n.groups <- floor(n.students/group.size)
+    max.size <- ceiling(n.students/n.groups)
+    shuffled.names <- c(sample(student.names), rep(NA, n.groups*max.size - n.students))
+    shuffled.mat <- matrix(shuffled.names, nrow = n.groups)
+    out <- vector(mode = "list", length = n.groups)
+    for (i in 1:n.groups) out[[i]] <- shuffled.mat[i, ][!is.na(shuffled.mat[i, ])]
+    start.letter.number <- which(LETTERS == start.letter)
+    names(out) <- paste("Team", LETTERS[start.letter.number:(start.letter.number + n.groups - 1)])
+    out
 }
