@@ -12,6 +12,16 @@ get.data <- function(url){
     fromJSON(json, flatten = FALSE)
 }
 
+## A function to add a member to a group.
+add.member <- function(group.id, user.id, domain){
+    url <- paste(domain, "/api/v1", "groups", group.id, "memberships", sep = "/")
+    user.arg <- paste0("\'user_id=", user.id, "\'")
+    auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
+    cmd <- paste("curl", url, "-F", user.arg, "-H", auth.arg)
+    system(cmd)
+}
+
+
 ## A function to determine grades based on a group assessment and peer
 ## assessments.
 grade.fun <- function(group, individual){
@@ -159,7 +169,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
 }
 
 ## A function to randomly allocate students to groups.
-allocate.groups <- function(group.size, start.letter = "A", stream, course.id, domain = "https://canvas.auckland.ac.nz"){
+allocate.groups <- function(group.size, start.letter = "A", group.category.name, stream, course.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
     if (stream == "tuesday"){
@@ -171,18 +181,47 @@ allocate.groups <- function(group.size, start.letter = "A", stream, course.id, d
     } else if (stream == "swu"){
         stream.id <- streams.df$id[streams.df$name == "DATASCI 399 - Online SWU"]
     }
+    ## Getting student information for this stream.
     url <- paste(domain, "/api/v1", "groups", stream.id, "users", sep = "/")
-    student.names <- get.data(url)$name
+    student.df <- get.data(url)
+    n.students <- nrow(student.df)
+    student.names <- student.df$name
+    student.ids <- student.df$id
+    ## Getting the group category ID number.
+    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
+    group.category.df <- get.data(url)
+    group.category.id <- group.category.df$id[group.category.df$name == group.category.name]
+    ## Getting the groups only associated with the right activity.
+    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+    groups.df <- get.data(url)
+    groups.df <- groups.df[groups.df$group_category_id == group.category.id, ]
+    ## Allocating students to groups.
     n.students <- length(student.names)
     n.groups <- floor(n.students/group.size)
     max.size <- ceiling(n.students/n.groups)
-    shuffled.names <- c(sample(student.names), rep(NA, n.groups*max.size - n.students))
-    shuffled.mat <- matrix(shuffled.names, nrow = n.groups)
+    shuffle.order <- sample(n.students)
+    shuffled.ids <- c(student.ids[shuffle.order], rep(NA, n.groups*max.size - n.students))
+    shuffled.names <- c(student.names[shuffle.order], rep(NA, n.groups*max.size - n.students))
+    shuffled.ids.mat <- matrix(shuffled.ids, nrow = n.groups)
+    shuffled.names.mat <- matrix(shuffled.names, nrow = n.groups)
     out <- vector(mode = "list", length = n.groups)
-    for (i in 1:n.groups) out[[i]] <- shuffled.mat[i, ][!is.na(shuffled.mat[i, ])]
+    for (i in 1:n.groups) out[[i]] <- shuffled.names.mat[i, ][!is.na(shuffled.names.mat[i, ])]
     start.letter.number <- which(LETTERS == start.letter)
     names(out) <- paste("Team", LETTERS[start.letter.number:(start.letter.number + n.groups - 1)])
-    out
+    print(out)
+    post <- readline(prompt = "Post groups? Type 'yes' to confirm.")
+    if (post == "yes"){
+        for (i in 1:nrow(shuffled.ids.mat)){
+            group.id <- groups.df$id[substr(groups.df$name, nchar(groups.df$name), nchar(groups.df$name)) ==
+                                     substr(names(out), nchar(names(out)), nchar(names(out)))[i]]
+            for (j in 1:ncol(shuffled.ids.mat)){
+                user.id <- shuffled.ids.mat[i, j]
+                if (!is.na(user.id)){
+                    add.member(group.id, user.id, domain)
+                }
+            }
+        }
+    }
 }
 
 ## A function to randomly allocate students to grade other groups.
