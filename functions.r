@@ -363,3 +363,58 @@ allocate.graders <- function(n.grades, group.category.name, stream, course.id, d
 letter.count <- function(x, group.names){
     table(factor(strsplit(paste(x, collapse = ""), split = "")[[1]], levels = group.names))
 }
+
+team.count <- function(group.category.names, stream, course.id, domain){
+    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+    streams.df <- get.data(url)
+    if (stream == "tuesday"){
+        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Tuesday Stream"]
+    } else if (stream == "friday"){
+        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Friday Stream"]   
+    } else if (stream == "online"){
+        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Online"]
+    } else if (stream == "swu"){
+        stream.id <- streams.df$id[streams.df$name == "DATASCI 399 - Online SWU"]
+    }
+    ## Getting student information for this stream.
+    url <- paste(domain, "/api/v1", "groups", stream.id, "users", sep = "/")
+    student.df <- get.data(url)
+    n.students <- nrow(student.df)
+    student.names <- student.df$name
+    student.ids <- student.df$id
+    ## Creating output matrix.
+    out <- matrix(0, nrow = n.students, ncol = n.students)
+    ## Getting the group category ID number.
+    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
+    group.category.df <- get.data(url)
+    ## Number of group categories.
+    n.group.categories <- length(group.category.names)
+    ## Looping over the group categories.
+    for (g in 1:n.group.categories){
+        group.category.id <- group.category.df$id[group.category.df$name == group.category.names[g]]
+        ## Getting group information for this category.
+        url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+        group.df <- get.data(url)
+        group.df <- group.df[group.df$group_category_id == group.category.id, ]
+        ## Removing the "Absent" group.
+        group.df <- group.df[group.df$name != "Absent", ]
+        ## All the group IDs.
+        group.ids <- group.df$id
+        ## Creating a vector of group id for each student.
+        student.group.id <- numeric(n.students)
+        ## Getting users for a group.
+        for (i in group.ids){
+            url <- paste(domain, "/api/v1", "groups", i, "users", sep = "/")
+            user.df <- get.data(url)
+            student.group.id[student.df$id %in% user.df$id] <- i
+        }
+        ## Incrementing the correct entries of the output matrix.
+        for (i in 1:n.students){
+            out[i, which(student.group.id == student.group.id[i])] <-
+                out[i, which(student.group.id == student.group.id[i])] + 1
+        }
+    }
+    rownames(out) <- student.names
+    colnames(out) <- student.names
+    out
+}
