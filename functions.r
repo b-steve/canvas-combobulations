@@ -8,8 +8,24 @@ get.data <- function(url){
                           add_headers(Authorization = paste("Bearer", token)),
                           query = list(per_page = 100, user_id = NULL))
     resp <- do.call("GET", resp.fun.args)
+    header.link <- headers(resp)$link
+    pagevec <- strsplit(strsplit(header.link, "&per_page=100>; rel=\"last\"")[[1]], "page=")[[1]]
+    n.pages <- pagevec[length(pagevec)]
     json <- content(resp, "text")
-    fromJSON(json, flatten = FALSE)
+    out <- fromJSON(json, flatten = FALSE)
+    if (n.pages > 1){
+        for (i in 2:n.pages){
+            page.url <- paste0(url, "?page=", i, "&per_page=100")
+            page.resp.fun.args <- list(url = page.url,
+                                       user_agent("hightops"),
+                                       add_headers(Authorization = paste("Bearer", token)),
+                                       query = list(per_page = 100, user_id = NULL))
+            page.resp <- do.call("GET", page.resp.fun.args)
+            page.json <- content(page.resp, "text")
+            out <- rbind(out, fromJSON(page.json, flatten = FALSE))
+        }
+    }
+    out
 }
 
 ## A function to create groups.
