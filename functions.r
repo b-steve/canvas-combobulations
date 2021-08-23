@@ -8,21 +8,16 @@ get.data <- function(url){
                           add_headers(Authorization = paste("Bearer", token)),
                           query = list(per_page = 100, user_id = NULL))
     resp <- do.call("GET", resp.fun.args)
-    header.link <- headers(resp)$link
-    pagevec <- strsplit(strsplit(header.link, "&per_page=100>; rel=\"last\"")[[1]], "page=")[[1]]
-    n.pages <- pagevec[length(pagevec)]
+    header <- headers(resp)$link
     json <- content(resp, "text")
     out <- fromJSON(json, flatten = FALSE)
-    if (n.pages > 1){
-        for (i in 2:n.pages){
-            page.url <- paste0(url, "?page=", i, "&per_page=100")
-            page.resp.fun.args <- list(url = page.url,
-                                       user_agent("hightops"),
-                                       add_headers(Authorization = paste("Bearer", token)),
-                                       query = list(per_page = 100, user_id = NULL))
-            page.resp <- do.call("GET", page.resp.fun.args)
-            page.json <- content(page.resp, "text")
-            out <- rbind(out, fromJSON(page.json, flatten = FALSE))
+    if (!is.null(header)){
+        header.split <- strsplit(strsplit(header, "<")[[1]], ">")
+        header.split <- header.split[2:length(header.split)]
+        header.links <- sapply(header.split, function(x) x[1])
+        header.link.type <- sapply(strsplit(sapply(header.split, function(x) x[2]), "\""), function(x) x[2])
+        if (any(header.link.type == "next")){
+            out <- rbind(out, get.data(header.links[header.link.type == "next"]))
         }
     }
     out
@@ -106,8 +101,12 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     pr.assessments.data <- pr.assessments.df$data
     pr.assessments.df <- pr.assessments.df[, names(pr.assessments.df) != "data" &
                                              names(pr.assessments.df) != "rubric_association"]
-    pr.items.df <- t(sapply(pr.assessments.data, function(x) x$points))
-    n.items <- ncol(pr.items.df)
+    pr.items.list <- sapply(pr.assessments.data, function(x) x$points, simplify = FALSE)
+    n.items <- max(sapply(pr.items.list, length))
+    for (i in which(sapply(pr.items.list, length) == 0)){
+        pr.items.list[[i]] <- rep(NA, n.items)
+    }
+    pr.items.df <- do.call(rbind, pr.items.list)
     ## Combining the completion and assessment data frame and adding student/assessor names.
     n.pas <- nrow(pr.df)
     n.completed <- nrow(pr.assessments.df)
@@ -117,6 +116,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     assessor.name <- all.names[as.character(pr.df$assessor_id)]
     score <- rep(NA, n.pas)
     item.scores <- matrix(NA, nrow = n.pas, ncol = n.items)
+    browser()
     for (i in 1:n.completed){
         score[pr.df$asset_id == pr.assessments.df$artifact_id[i] &
               pr.df$assessor_id == pr.assessments.df$assessor_id[i]] <- pr.assessments.df$score[i]
@@ -124,10 +124,11 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
               pr.df$assessor_id == pr.assessments.df$assessor_id[i], ] <- pr.items.df[i, ]
     }
     pr.df <- data.frame(pr.df, student_name = student.name,
-                        assessor_name = assessor.name, score = score)
-    pr.df <- pr.df[, c(2, 6:9)]
+                        assessor_name = assessor.name)
+    pr.df <- pr.df[, c(4, 6:8)]
     colnames(item.scores) <- paste0("item", 1:n.items)
-    pr.df <- data.frame(pr.df, item.scores)
+    score <- apply(item.scores, 1, mean, na.rm = TRUE)*n.items
+    pr.df <- data.frame(pr.df, score, item.scores)
     
     ## Getting group category information.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
@@ -151,10 +152,8 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     individual.df$pa.score <- tapply(pr.df$score, pr.df$user_id,
                                      mean, na.rm = TRUE)[as.character(individual.df$id)]/
         rubric.info$points_possible*5
-    individual.df$p.completed <- tapply(pr.df$score, pr.df$assessor_id,
-                                        function(x){
-                                            mean(!is.na(x))}
-                                        )[as.character(individual.df$id)]
+    individual.df$p.completed <- tapply(apply(item.scores, 1, function(x) mean(!is.na(x))),
+                                        pr.df$assessor_id, mean)[as.character(individual.df$id)]
     
     ## Putting the group information into the individual data frame.
     group.id <- numeric(n.students)
@@ -171,6 +170,8 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
 
     ## Putting the group grades into the individual data frame.
     individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
+    ## Replacint NaN with NA in the peer-appraisal scores.
+    individual.df$pa.score[is.nan(individual.df$pa.score)] <- NA
     
     ## Calculating final grades.
     final.grade <- numeric(n.students)
