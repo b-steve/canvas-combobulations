@@ -56,26 +56,6 @@ add.member <- function(group.id, user.id, domain){
     system(cmd)
 }
 
-
-## A function to determine grades based on a group assessment and peer
-## assessments.
-grade.fun <- function(group, individual){
-    n.students <- length(individual)
-    out <- numeric(n.students)
-    if (!is.null(names(individual))){
-        names(out) <- names(individual)
-    }
-    for (i in 1:n.students){
-        if (individual[i] < 2.5){
-            out[i] <- group/2.5 + ((group - group/2.5)/1.5)*(individual[i] - 1)
-        } else {
-            out[i] <- group + 0.02*group*(individual[i] - 2.5)
-        }
-    }
-    out[out > 100] <- 100
-    out
-}
-
 ## The main function to calculate individual grades.
 ## assignment.id: The Canvas ID for the main assignment.
 ## assignment.pa.id: The Canvas ID for the peer-assessment assignment.
