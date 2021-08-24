@@ -116,7 +116,6 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     assessor.name <- all.names[as.character(pr.df$assessor_id)]
     score <- rep(NA, n.pas)
     item.scores <- matrix(NA, nrow = n.pas, ncol = n.items)
-    browser()
     for (i in 1:n.completed){
         score[pr.df$asset_id == pr.assessments.df$artifact_id[i] &
               pr.df$assessor_id == pr.assessments.df$assessor_id[i]] <- pr.assessments.df$score[i]
