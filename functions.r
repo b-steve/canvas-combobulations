@@ -167,6 +167,32 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     individual.df$group.id <- group.id
     individual.df$group.name <- group.name
 
+    ## Putting stream information into the individual data frame.
+    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
+    stream.category.df <- get.data(url)
+    stream.category.id <- stream.category.df$id[stream.category.df$name == "Stream"]
+    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+    stream.df <- get.data(url)
+    stream.df <- stream.df[stream.df$group_category_id == stream.category.id, ]
+    stream.ids <- stream.df$id
+    n.streams <- nrow(stream.df)
+    stream.info <- vector(mode = "list", length = n.streams)
+    for (i in 1:n.streams){
+        url <- paste(domain, "/api/v1", "groups", stream.ids[i], "users", sep = "/")
+        stream.info[[i]] <- get.data(url)
+    }
+    stream.names <- stream.df$name
+    stream.id <- numeric(n.students)
+    stream.name <- character(n.students)
+    for (i in 1:n.streams){
+        n.members <- nrow(stream.info[[i]])
+        for (j in 1:n.members){
+            stream.id[individual.df$id == stream.info[[i]]$id[j]] <- stream.ids[i]
+            stream.name[individual.df$id == stream.info[[i]]$id[j]] <- stream.names[i]
+        }
+    }
+    individual.df$stream.id <- stream.id
+    individual.df$stream.name <- stream.name
     ## Putting the group grades into the individual data frame.
     individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
     ## Replacint NaN with NA in the peer-appraisal scores.
@@ -413,4 +439,43 @@ team.count <- function(group.category.names, stream, course.id, domain){
     rownames(out) <- student.names
     colnames(out) <- student.names
     out
+}
+
+## A function to summarise peer-appraisals.
+summarise.pa <- function(assignment.ids, assignment.pa.ids, domain = "https://canvas.auckland.ac.nz", course.id){
+    ## Getting student list.
+    url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
+    pa.df <- get.data(url)[, c("id", "name")]
+    pc.df <- pa.df
+    n.people <- nrow(pa.df)
+    n.assignments <- length(assignment.pa.ids)
+    pa.mat <- matrix(0, nrow = n.people, ncol = n.assignments)
+    pc.mat <- matrix(0, nrow = n.people, ncol = n.assignments)
+    for (i in 1:n.assignments){
+        ## Getting assignment information.
+        url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.ids[i], sep = "/")
+        assign.info <- get.data(url)
+        ## Getting group category ID.
+        group.category.id <- assign.info$group_category_id
+        ## Getting group category ID.
+        group.category.id <- assign.info$group_category_id
+        ## Getting group category information.
+        url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+        group.category.df <- get.data(url)
+        group.category.df <- group.category.df[group.category.df$group_category_id == group.category.id, ]
+        n.groups <- nrow(group.category.df)
+        ## Getting information for the different groups.
+        group.ids <- group.category.df$id
+        n.groups <- nrow(group.category.df)
+        group.grades <- vector(mode = "list", length = n.groups)
+        group.grades[1:n.groups] <- 50
+        names(group.grades) <- paste("Group", LETTERS[1:n.groups])
+        individual.df <- calc.grades(assignment.id = assignment.ids[i], assignment.pa.id = assignment.pa.ids[i],
+                                     group.grades = group.grades, grade.fun = function(x, y) x, domain = domain,
+                                     course.id = course.id)$individual[, c("id", "stream.name", "name", "pa.score", "p.completed")]
+        pa.df <- merge(pa.df, individual.df[, c("id", "stream.name"[i == 1], "pa.score")], by = "id", all = TRUE, sort = FALSE)
+        names(pa.df)[3 + i] <- paste("pa.score.", i)
+    }
+    pa.df <- pa.df[apply(pa.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
+    pa.df
 }
