@@ -51,6 +51,15 @@ add.member <- function(group.id, user.id, domain){
     system(cmd)
 }
 
+post.grade <- function(grade, assignment.id, user.id, course.id, domain){
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments",
+                 assignment.id, "submissions", "update_grades", sep = "/")
+    auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
+    post.arg <- paste0("\'grade_data[", user.id, "][posted_grade]=", grade, "%\'")
+    cmd <- paste("curl", url, "-X POST", "-F", post.arg, "-H", auth.arg)
+    system(cmd)
+}
+
 ## The main function to calculate individual grades.
 ## assignment.id: The Canvas ID for the main assignment.
 ## assignment.pa.id: The Canvas ID for the peer-assessment assignment.
@@ -195,7 +204,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     individual.df$stream.name <- stream.name
     ## Putting the group grades into the individual data frame.
     individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
-    ## Replacint NaN with NA in the peer-appraisal scores.
+    ## Replacing NaN with NA in the peer-appraisal scores.
     individual.df$pa.score[is.nan(individual.df$pa.score)] <- NA
     
     ## Calculating final grades.
@@ -206,6 +215,15 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
                       individual.df$pa.score[individual.df$group.name == group.names[i]])
     }
     individual.df$final.grade <- final.grade
+    print(individual.df[, c("name", "p.completed", "group.grade", "pa.score", "final.grade")])
+    post <- readline(prompt = "Post grades? Type 'yes' to confirm.")
+    if (post == "yes"){
+        for (i in 1:n.students){
+            post.grade(round(individual.df$final.grade[i], 1), assignment.id, individual.df$id[i], course.id, domain)
+            post.grade(round(100*individual.df$p.completed[i], 1), assignment.pa.id, individual.df$id[i], course.id, domain)
+        }
+    }
+    
     list(individual = individual.df, pr = pr.df)
 }
 
@@ -470,12 +488,17 @@ summarise.pa <- function(assignment.ids, assignment.pa.ids, domain = "https://ca
         group.grades <- vector(mode = "list", length = n.groups)
         group.grades[1:n.groups] <- 50
         names(group.grades) <- paste("Group", LETTERS[1:n.groups])
-        individual.df <- calc.grades(assignment.id = assignment.ids[i], assignment.pa.id = assignment.pa.ids[i],
+        grades.list <- calc.grades(assignment.id = assignment.ids[i], assignment.pa.id = assignment.pa.ids[i],
                                      group.grades = group.grades, grade.fun = function(x, y) x, domain = domain,
-                                     course.id = course.id)$individual[, c("id", "stream.name", "name", "pa.score", "p.completed")]
+                                   course.id = course.id)
+        individual.df <- grades.list$individual[, c("id", "stream.name", "name", "pa.score", "p.completed")]
         pa.df <- merge(pa.df, individual.df[, c("id", "stream.name"[i == 1], "pa.score")], by = "id", all = TRUE, sort = FALSE)
-        names(pa.df)[3 + i] <- paste("pa.score.", i)
+        pc.df <- merge(pc.df, individual.df[, c("id", "stream.name"[i == 1], "p.completed")], by = "id", all = TRUE, sort = FALSE)
+        names(pa.df)[3 + i] <- paste0("pa.score.", i)
+        names(pc.df)[3 + i] <- paste0("p.completed.", i)
     }
     pa.df <- pa.df[apply(pa.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
-    pa.df
+    pc.df <- pc.df[apply(pa.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
+    pa.df$average <- apply(pa.df[, -(1:3)], 1, mean, na.rm = TRUE)
+    list(pa = pa.df, pc = pc.df)
 }
