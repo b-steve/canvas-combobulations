@@ -67,7 +67,9 @@ post.grade <- function(grade, assignment.id, user.id, course.id, domain){
 ## grade.fun: A function to determine grades based on a group assessment and peer assessments.
 ## domain: The Canvas domain for your institution.
 ## course.id: The Canvas ID for the course.
-calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun, domain = "https://canvas.auckland.ac.nz", course.id){
+calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, grade.fun, domain = "https://canvas.auckland.ac.nz", course.id){
+    ## Indicator for whether we only do peer-assessment participation grading.
+    pa.only <- is.null(group.grades)
     ## Getting student list.
     url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
     people.df <- get.data(url)
@@ -136,8 +138,17 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     pr.df <- pr.df[, c(4, 6:8)]
     colnames(item.scores) <- paste0("item", 1:n.items)
     score <- apply(item.scores, 1, mean, na.rm = TRUE)*n.items
-    pr.df <- data.frame(pr.df, score, item.scores)
-    
+    ## Determining completion of open-ended comments.
+    o.completed <- logical(nrow(pr.df))
+    for (i in unique(pr.df$user_id)){
+        url <- paste0(paste("https://canvas.auckland.ac.nz", "/api/v1", "courses", course.id,
+                    "assignments", assignment.pa.id, "submissions", i, sep = "/"), "?",
+                    "include=submission_comments")
+        comment.df <- get.data(url)$submission_comments
+        author.ids <- comment.df$author_id[nchar(comment.df$comment) >= 20]
+        o.completed[pr.df$user_id == i & pr.df$assessor_id %in% author.ids] <- TRUE
+    }
+    pr.df <- data.frame(pr.df, o.completed, score, item.scores) 
     ## Getting group category information.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     group.category.df <- get.data(url)
@@ -162,7 +173,11 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
         rubric.info$points_possible*5
     individual.df$p.completed <- tapply(apply(item.scores, 1, function(x) mean(!is.na(x))),
                                         pr.df$assessor_id, mean)[as.character(individual.df$id)]
-    
+    individual.df$o.completed <- numeric(n.students)
+    for (i in 1:n.students){
+        individual.df$o.completed[i] <- mean(pr.df$o.completed[pr.df$assessor_id == individual.df$id[i]])
+    }
+    individual.df$participation.score <- 0.75*individual.df$p.completed + 0.25*individual.df$o.completed
     ## Putting the group information into the individual data frame.
     group.id <- numeric(n.students)
     group.name <- character(n.students)
@@ -202,25 +217,30 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades, grade.fun
     }
     individual.df$stream.id <- stream.id
     individual.df$stream.name <- stream.name
-    ## Putting the group grades into the individual data frame.
-    individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
     ## Replacing NaN with NA in the peer-appraisal scores.
     individual.df$pa.score[is.nan(individual.df$pa.score)] <- NA
-    
-    ## Calculating final grades.
     final.grade <- numeric(n.students)
-    for (i in 1:n.groups){
-        final.grade[individual.df$group.name == group.names[i]] <-
-            grade.fun(group.grades[[group.names[i]]],
-                      individual.df$pa.score[individual.df$group.name == group.names[i]])
+    if (pa.only){
+        individual.df$group.grade <- numeric(n.students)
+    } else {
+        ## Putting the group grades into the individual data frame.
+        individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
+        ## Calculating final grades.
+        for (i in 1:n.groups){
+            final.grade[individual.df$group.name == group.names[i]] <-
+                grade.fun(group.grades[[group.names[i]]],
+                          individual.df$pa.score[individual.df$group.name == group.names[i]])
+        }
     }
     individual.df$final.grade <- final.grade
-    print(individual.df[, c("name", "p.completed", "group.grade", "pa.score", "final.grade")])
+    print(individual.df[, c("name", "participation.score", "group.grade", "pa.score", "final.grade")])
     post <- readline(prompt = "Post grades? Type 'yes' to confirm.")
     if (post == "yes"){
         for (i in 1:n.students){
-            post.grade(round(individual.df$final.grade[i], 1), assignment.id, individual.df$id[i], course.id, domain)
-            post.grade(round(100*individual.df$p.completed[i], 1), assignment.pa.id, individual.df$id[i], course.id, domain)
+            if (!pa.only){
+                post.grade(round(individual.df$final.grade[i], 1), assignment.id, individual.df$id[i], course.id, domain)
+            }
+            post.grade(round(100*individual.df$participation.score[i], 1), assignment.pa.id, individual.df$id[i], course.id, domain)
         }
     }
     
