@@ -67,9 +67,12 @@ post.grade <- function(grade, assignment.id, user.id, course.id, domain){
 ## grade.fun: A function to determine grades based on a group assessment and peer assessments.
 ## domain: The Canvas domain for your institution.
 ## course.id: The Canvas ID for the course.
-calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, grade.fun, domain = "https://canvas.auckland.ac.nz", course.id){
+calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, grade.fun = NULL, post = NULL, domain = "https://canvas.auckland.ac.nz", course.id){
     ## Indicator for whether we only do peer-assessment participation grading.
     pa.only <- is.null(group.grades)
+    if (!pa.only & is.null(grade.fun)){
+        stop("No 'grade.fun' specified.")
+    }
     ## Getting student list.
     url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
     people.df <- get.data(url)
@@ -233,8 +236,14 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
         }
     }
     individual.df$final.grade <- final.grade
-    print(individual.df[, c("name", "participation.score", "group.grade", "pa.score", "final.grade")])
-    post <- readline(prompt = "Post grades? Type 'yes' to confirm.")
+    if (is.null(post)){
+        print(individual.df[, c("name", "participation.score", "group.grade", "pa.score", "final.grade")])
+        post <- readline(prompt = "Post grades? Type 'yes' to confirm.")
+    } else {
+        if (post){
+            post  <- "yes"
+        }
+    }
     if (post == "yes"){
         for (i in 1:n.students){
             if (!pa.only){
@@ -505,11 +514,8 @@ summarise.pa <- function(assignment.ids, assignment.pa.ids, domain = "https://ca
         ## Getting information for the different groups.
         group.ids <- group.category.df$id
         n.groups <- nrow(group.category.df)
-        group.grades <- vector(mode = "list", length = n.groups)
-        group.grades[1:n.groups] <- 50
-        names(group.grades) <- paste("Group", LETTERS[1:n.groups])
         grades.list <- calc.grades(assignment.id = assignment.ids[i], assignment.pa.id = assignment.pa.ids[i],
-                                     group.grades = group.grades, grade.fun = function(x, y) x, domain = domain,
+                                     group.grades = NULL, grade.fun = NULL, post = FALSE, domain = domain,
                                    course.id = course.id)
         individual.df <- grades.list$individual[, c("id", "stream.name", "name", "pa.score", "p.completed")]
         pa.df <- merge(pa.df, individual.df[, c("id", "stream.name"[i == 1], "pa.score")], by = "id", all = TRUE, sort = FALSE)
