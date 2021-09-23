@@ -60,6 +60,19 @@ post.grade <- function(grade, assignment.id, user.id, course.id, domain){
     system(cmd)
 }
 
+## A function to post individual grades. Just need a named vector.
+post.individual.grades <- function(grades, assignment.id, course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## Getting student list.
+    url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
+    people.df <- get.data(url)
+    student.names <- names(grades)
+    n.students <- length(grades)
+    for (i in 1:n.students){
+        user.id <- people.df$id[people.df$short_name == student.names[i]]
+        post.grade(grades[i], assignment.id, user.id, course.id, domain)
+    }
+}
+
 ## The main function to calculate individual grades.
 ## assignment.id: The Canvas ID for the main assignment.
 ## assignment.pa.id: The Canvas ID for the peer-assessment assignment.
