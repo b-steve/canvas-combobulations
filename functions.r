@@ -222,7 +222,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     individual.df$stream.name <- stream.name
     ## Replacing NaN with NA in the peer-appraisal scores.
     individual.df$pa.score[is.nan(individual.df$pa.score)] <- NA
-    final.grade <- numeric(n.students)
+    final.grade <- rep(NA, n.students)
     if (pa.only){
         individual.df$group.grade <- numeric(n.students)
     } else {
@@ -230,9 +230,11 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
         individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
         ## Calculating final grades.
         for (i in 1:n.groups){
-            final.grade[individual.df$group.name == group.names[i]] <-
-                grade.fun(group.grades[[group.names[i]]],
-                          individual.df$pa.score[individual.df$group.name == group.names[i]])
+            if (group.names[i] != "Absent"){
+                final.grade[individual.df$group.name == group.names[i]] <-
+                    grade.fun(group.grades[[group.names[i]]],
+                              individual.df$pa.score[individual.df$group.name == group.names[i]])
+            }
         }
     }
     individual.df$final.grade <- final.grade
@@ -247,7 +249,9 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     if (post == "yes"){
         for (i in 1:n.students){
             if (!pa.only){
-                post.grade(round(individual.df$final.grade[i], 1), assignment.id, individual.df$id[i], course.id, domain)
+                if (!is.na(individual.df$final.grade[i])){
+                    post.grade(round(individual.df$final.grade[i], 1), assignment.id, individual.df$id[i], course.id, domain)
+                }
             }
             post.grade(round(100*individual.df$participation.score[i], 1), assignment.pa.id, individual.df$id[i], course.id, domain)
         }
