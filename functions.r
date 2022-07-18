@@ -37,7 +37,7 @@ create.groups <- function(group.names, group.category.name, course.id, domain){
     auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
     for (i in group.names){
         name.arg <- paste0("\'name=", i, "\'")
-        cmd <- paste("curl", url, "-F", name.arg, "-F", public.arg, "-F", join.arg, "-H", auth.arg)
+        cmd <- paste("curl", url, "-F", name.arg, "-F", public.arg, "-F", join.arg, "-H", auth.arg, "> /dev/null")
         system(cmd)
     }
 }
@@ -47,7 +47,7 @@ add.member <- function(group.id, user.id, domain){
     url <- paste(domain, "/api/v1", "groups", group.id, "memberships", sep = "/")
     user.arg <- paste0("\'user_id=", user.id, "\'")
     auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
-    cmd <- paste("curl", url, "-F", user.arg, "-H", auth.arg)
+    cmd <- paste("curl", url, "-F", user.arg, "-H", auth.arg, "> /dev/null")
     system(cmd)
 }
 
@@ -56,7 +56,7 @@ post.grade <- function(grade, assignment.id, user.id, course.id, domain){
                  assignment.id, "submissions", "update_grades", sep = "/")
     auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
     post.arg <- paste0("\'grade_data[", user.id, "][posted_grade]=", grade, "%\'")
-    cmd <- paste("curl", url, "-X POST", "-F", post.arg, "-H", auth.arg)
+    cmd <- paste("curl", url, "-X POST", "-F", post.arg, "-H", auth.arg, "> /dev/null")
     system(cmd)
 }
 
@@ -274,18 +274,21 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
 }
 
 ## A function to randomly allocate students to groups.
+
+## group.size: The number of students per group. A small number of
+##             groups might be larger.
+## group.category.name: The name of the group category for the
+##                      assignment in Canvas.
+## stream: The stream name. This needs to match what appears in
+##         Canvas. If a single stream is split into substreams, then
+##         the substream names in Canvas must end with a number.
+## WARNING: You can't have more than 26 groups in a substream, sorry lmao.
 allocate.groups <- function(group.size, group.category.name, stream, course.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
-    if (stream == "tuesday"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Tuesday Stream"]
-    } else if (stream == "friday"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Friday Stream"]   
-    } else if (stream == "online"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Online"]
-    } else if (stream == "swu"){
-        stream.id <- streams.df$id[streams.df$name == "DATASCI 399 - Online SWU"]
-    }
+    stream.id <- streams.df$id[streams.df$name == stream]
+    ## Stripping substream number from stream name.
+    stream <- gsub('[[:digit:]]+', '', stream)
     ## Getting student information for this stream.
     url <- paste(domain, "/api/v1", "groups", stream.id, "users", sep = "/")
     student.df <- get.data(url)
@@ -300,10 +303,13 @@ allocate.groups <- function(group.size, group.category.name, stream, course.id, 
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     groups.df <- get.data(url)
     groups.df <- groups.df[groups.df$group_category_id == group.category.id, ]
-    if (nrow(groups.df) == 0){
+    existing.substream.group.names <- groups.df$name[substr(groups.df$name, 1, 6 + nchar(stream)) == paste("Group", stream)]
+    if (length(existing.substream.group.names) == 0){
         start.letter <- "A"
     } else {
-        start.letter <- LETTERS[!(LETTERS %in% substr(groups.df$name, nchar(groups.df$name), nchar(groups.df$name)))][1]
+        start.letter <- LETTERS[!(LETTERS %in% substr(existing.substream.group.names,
+                                                      nchar(groups.df$name),
+                                                      nchar(groups.df$name)))][1]
     }
     ## Allocating students to groups.
     n.students <- length(student.names)
@@ -315,9 +321,11 @@ allocate.groups <- function(group.size, group.category.name, stream, course.id, 
     shuffled.ids.mat <- matrix(shuffled.ids, nrow = n.groups)
     shuffled.names.mat <- matrix(shuffled.names, nrow = n.groups)
     out <- vector(mode = "list", length = n.groups)
-    for (i in 1:n.groups) out[[i]] <- shuffled.names.mat[i, ][!is.na(shuffled.names.mat[i, ])]
+    for (i in 1:n.groups){
+        out[[i]] <- shuffled.names.mat[i, ][!is.na(shuffled.names.mat[i, ])]
+    }
     start.letter.number <- which(LETTERS == start.letter)
-    names(out) <- paste("Group", LETTERS[start.letter.number:(start.letter.number + n.groups - 1)])
+    names(out) <- paste("Group", stream, LETTERS[start.letter.number:(start.letter.number + n.groups - 1)])
     print(out)
     post <- readline(prompt = "Post groups? Type 'yes' to confirm.")
     if (post == "yes"){
@@ -326,8 +334,7 @@ allocate.groups <- function(group.size, group.category.name, stream, course.id, 
         groups.df <- get.data(url)
         groups.df <- groups.df[groups.df$group_category_id == group.category.id, ]
         for (i in 1:nrow(shuffled.ids.mat)){
-            group.id <- groups.df$id[substr(groups.df$name, nchar(groups.df$name), nchar(groups.df$name)) ==
-                                     substr(names(out), nchar(names(out)), nchar(names(out)))[i]]
+            group.id <- groups.df$id[groups.df$name == names(out)[i]]
             for (j in 1:ncol(shuffled.ids.mat)){
                 user.id <- shuffled.ids.mat[i, j]
                 if (!is.na(user.id)){
