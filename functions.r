@@ -282,8 +282,11 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
 ## stream: The stream name. This needs to match what appears in
 ##         Canvas. If a single stream is split into substreams, then
 ##         the substream names in Canvas must end with a number.
+## absent: A vector of user IDs for students who are absent. Students
+##         who are absent are removed prior to random allocation, and
+##         get put in their own group with other absentees.
 ## WARNING: You can't have more than 26 groups in a substream, sorry lmao.
-allocate.groups <- function(group.size, group.category.name, stream, course.id, domain = "https://canvas.auckland.ac.nz"){
+allocate.groups <- function(group.size, group.category.name, stream, absent = integer(0), course.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
     stream.id <- streams.df$id[streams.df$name == stream]
@@ -292,6 +295,8 @@ allocate.groups <- function(group.size, group.category.name, stream, course.id, 
     ## Getting student information for this stream.
     url <- paste(domain, "/api/v1", "groups", stream.id, "users", sep = "/")
     student.df <- get.data(url)
+    absent <- absent[absent %in% student.df$id]
+    student.df <- student.df[!(student.df$id %in% absent), ]
     n.students <- nrow(student.df)
     student.names <- student.df$name
     student.ids <- student.df$id
@@ -308,8 +313,8 @@ allocate.groups <- function(group.size, group.category.name, stream, course.id, 
         start.letter <- "A"
     } else {
         start.letter <- LETTERS[!(LETTERS %in% substr(existing.substream.group.names,
-                                                      nchar(groups.df$name),
-                                                      nchar(groups.df$name)))][1]
+                                                      nchar(existing.substream.group.names),
+                                                      nchar(existing.substream.group.names)))][1]
     }
     ## Allocating students to groups.
     n.students <- length(student.names)
@@ -333,6 +338,18 @@ allocate.groups <- function(group.size, group.category.name, stream, course.id, 
         url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
         groups.df <- get.data(url)
         groups.df <- groups.df[groups.df$group_category_id == group.category.id, ]
+        if (length(absent) > 0){
+            if (!any(groups.df$name == "Absent")){
+                create.groups("Absent", group.category.name, course.id, domain)
+            }
+            url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+            groups.df <- get.data(url)
+            groups.df <- groups.df[groups.df$group_category_id == group.category.id, ]
+            group.id <- groups.df$id[groups.df$name == "Absent"]
+            for (i in absent){
+                add.member(group.id, i, domain)
+            }
+        }
         for (i in 1:nrow(shuffled.ids.mat)){
             group.id <- groups.df$id[groups.df$name == names(out)[i]]
             for (j in 1:ncol(shuffled.ids.mat)){
@@ -346,21 +363,21 @@ allocate.groups <- function(group.size, group.category.name, stream, course.id, 
 }
 
 ## A function to randomly allocate students to grade other groups.
-allocate.graders <- function(n.grades, group.category.name, stream, course.id, domain = "https://canvas.auckland.ac.nz"){
+## n.grades: Number of projects each student has to grade.
+## group.category.name: Activity group category.
+## stream: Stream to allocate graders for.
+## ignore.groups: Group IDs not to allocate graders to.
+allocate.graders <- function(n.grades, group.category.name, stream, ignore.groups = numeric(0), course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting student information for the stream.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
-    if (stream == "tuesday"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Tuesday Stream"]
-    } else if (stream == "friday"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Friday Stream"]   
-    } else if (stream == "online"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Online"]
-    } else if (stream == "swu"){
-        stream.id <- streams.df$id[streams.df$name == "DATASCI 399 - Online SWU"]
+    stream.base <- stream <- gsub('[[:digit:]]+', '', stream)
+    stream.ids <- streams.df$id[gsub('[[:digit:]]+', '', streams.df$name) == gsub('[[:digit:]]+', '', stream)]
+    student.df <- data.frame()
+    for (i in stream.ids){
+        url <- paste(domain, "/api/v1", "groups", i, "users", sep = "/")
+        student.df <- rbind(student.df, get.data(url)[, c("sis_user_id", "id", "name")])
     }
-    url <- paste(domain, "/api/v1", "groups", stream.id, "users", sep = "/")
-    student.df <- get.data(url)[, c("sis_user_id", "id", "name")]
     n.students <- nrow(student.df)
     ## Getting the group category ID number.
     url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
@@ -382,7 +399,9 @@ allocate.graders <- function(n.grades, group.category.name, stream, course.id, d
         student.df$group.name[student.df$id %in% user.df$id] <- groups.df$name[groups.df$id == i]
     }
     ## Removing groups we don't need for this stream from the groups data frame.
-    groups.df <- groups.df[groups.df$id %in% student.df$group.id, ]
+    groups.df <- groups.df[groups.df$id %in% student.df$group.id &
+                           groups.df$name != "Absent" &
+                           !(groups.df$id %in% ignore.groups), ]
     ## Total number of groups.
     n.groups <- nrow(groups.df)
     ## Total number of allocations of graders to make.
@@ -404,31 +423,33 @@ allocate.graders <- function(n.grades, group.category.name, stream, course.id, d
                 ## Getting candidate IDs. These belong to group j and
                 ## have the smallest number of previous allocations.
                 sub.temp.student.df <- temp.student.df[temp.student.df$group.name == j, ]
-                if (sum(nchar(sub.temp.student.df$groups.grade) == min(nchar(sub.temp.student.df$groups.grade))) >= n.grades.per.group.per.group){
-                    candidate.ids <- sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) == min(nchar(sub.temp.student.df$groups.grade)), "id"]
-                    if (length(candidate.ids) == n.grades.per.group.per.group){
-                        sampled.ids <- candidate.ids
+                if (nrow(sub.temp.student.df > 0)){
+                    if (sum(nchar(sub.temp.student.df$groups.grade) == min(nchar(sub.temp.student.df$groups.grade))) >= n.grades.per.group.per.group){
+                        candidate.ids <- sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) == min(nchar(sub.temp.student.df$groups.grade)), "id"]
+                        if (length(candidate.ids) == n.grades.per.group.per.group){
+                            sampled.ids <- candidate.ids
+                        } else {
+                            sampled.ids <- sample(candidate.ids, size = min(length(candidate.ids),
+                                                                            n.grades.per.group.per.group))
+                        }
                     } else {
-                        sampled.ids <- sample(candidate.ids, size = min(length(candidate.ids),
-                                                                        n.grades.per.group.per.group))
+                        candidate.ids <- sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) == min(nchar(sub.temp.student.df$groups.grade)), "id"]
+                        n.left <- length(sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) !=
+                                                             min(nchar(sub.temp.student.df$groups.grade)),
+                                                             "id"])
+                        if (n.left > 0){
+                            sampled.ids <- c(candidate.ids,
+                                             sample(sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) !=
+                                                                        min(nchar(sub.temp.student.df$groups.grade)),
+                                                                        "id"], min(c(n.left, n.grades.per.group.per.group -
+                                                                                             length(candidate.ids)))))
+                        } else {
+                            sampled.ids <- candidate.ids
+                        }
                     }
-                } else {
-                    candidate.ids <- sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) == min(nchar(sub.temp.student.df$groups.grade)), "id"]
-                    n.left <- length(sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) !=
-                                                                      min(nchar(sub.temp.student.df$groups.grade)),
-                                                                      "id"])
-                    if (n.left > 0){
-                        sampled.ids <- c(candidate.ids,
-                                           sample(sub.temp.student.df[nchar(sub.temp.student.df$groups.grade) !=
-                                                                      min(nchar(sub.temp.student.df$groups.grade)),
-                                                                      "id"], min(c(n.left, n.grades.per.group.per.group -
-                                                                             length(candidate.ids)))))
-                    } else {
-                        sampled.ids <- candidate.ids
-                    }
+                    student.df$groups.grade[student.df$id %in% sampled.ids] <-
+                        paste0(student.df$groups.grade[student.df$id %in% sampled.ids], substr(i, nchar(i), nchar(i)))
                 }
-                student.df$groups.grade[student.df$id %in% sampled.ids] <-
-                    paste0(student.df$groups.grade[student.df$id %in% sampled.ids], substr(i, nchar(i), nchar(i)))
             }
         }
     }
@@ -449,6 +470,7 @@ allocate.graders <- function(n.grades, group.category.name, stream, course.id, d
             student.df$groups.grade[i] <- paste0(student.df$groups.grade[i], sample(candidate.groups, size = 1))
         }
     }
+    print(table(strsplit(paste(student.df$groups.grade, collapse = ""), split = "")[[1]]))
     student.df
 }
 
