@@ -61,15 +61,13 @@ post.grade <- function(grade, assignment.id, user.id, course.id, domain){
 }
 
 ## A function to post individual grades. Just need a named vector.
-post.individual.grades <- function(grades, assignment.id, course.id, domain = "https://canvas.auckland.ac.nz"){
+post.individual.grades <- function(grades, user.id, assignment.id, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting student list.
     url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
     people.df <- get.data(url)
-    student.names <- names(grades)
     n.students <- length(grades)
     for (i in 1:n.students){
-        user.id <- people.df$id[people.df$short_name == student.names[i]]
-        post.grade(grades[i], assignment.id, user.id, course.id, domain)
+        post.grade(grades[i], assignment.id, user.id[i], course.id, domain)
     }
 }
 
