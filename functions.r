@@ -364,8 +364,9 @@ allocate.groups <- function(group.size, group.category.name, stream, absent = in
 ## n.grades: Number of projects each student has to grade.
 ## group.category.name: Activity group category.
 ## stream: Stream to allocate graders for.
+## print.groups: Shows group membership for students in this stream.
 ## ignore.groups: Group IDs not to allocate graders to.
-allocate.graders <- function(n.grades, group.category.name, stream, ignore.groups = numeric(0), course.id, domain = "https://canvas.auckland.ac.nz"){
+allocate.graders <- function(n.grades, group.category.name, stream, print.groups = FALSE, ignore.groups = numeric(0), course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting student information for the stream.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
@@ -395,6 +396,9 @@ allocate.graders <- function(n.grades, group.category.name, stream, ignore.group
         user.df <- get.data(url)
         student.df$group.id[student.df$id %in% user.df$id] <- i
         student.df$group.name[student.df$id %in% user.df$id] <- groups.df$name[groups.df$id == i]
+    }
+    if (print.groups){
+        print(student.df)
     }
     ## Removing groups we don't need for this stream from the groups data frame.
     groups.df <- groups.df[groups.df$id %in% student.df$group.id &
@@ -478,20 +482,16 @@ letter.count <- function(x, group.names){
 }
 
 team.count <- function(group.category.names, stream, course.id, domain){
+    ## Getting student information for the stream.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
-    if (stream == "tuesday"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Tuesday Stream"]
-    } else if (stream == "friday"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Friday Stream"]   
-    } else if (stream == "online"){
-        stream.id <- streams.df$id[streams.df$name == "STATS/DATASCI 399 - Online"]
-    } else if (stream == "swu"){
-        stream.id <- streams.df$id[streams.df$name == "DATASCI 399 - Online SWU"]
+    stream.base <- stream <- gsub('[[:digit:]]+', '', stream)
+    stream.ids <- streams.df$id[gsub('[[:digit:]]+', '', streams.df$name) == gsub('[[:digit:]]+', '', stream)]
+    student.df <- data.frame()
+    for (i in stream.ids){
+        url <- paste(domain, "/api/v1", "groups", i, "users", sep = "/")
+        student.df <- rbind(student.df, get.data(url)[, c("sis_user_id", "id", "name")])
     }
-    ## Getting student information for this stream.
-    url <- paste(domain, "/api/v1", "groups", stream.id, "users", sep = "/")
-    student.df <- get.data(url)
     n.students <- nrow(student.df)
     student.names <- student.df$name
     student.ids <- student.df$id
