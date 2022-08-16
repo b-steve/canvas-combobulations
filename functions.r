@@ -76,6 +76,7 @@ post.individual.grades <- function(grades, user.id, assignment.id, course.id, do
 ## assignment.pa.id: The Canvas ID for the peer-assessment assignment.
 ## group.grades: A list of group grades, with group names matching those on Canvas.
 ## grade.fun: A function to determine grades based on a group assessment and peer assessments.
+## post: Whether or not to post grades to Canvas; either TRUE or FALSE. If NULL, the user is prompted. 
 ## domain: The Canvas domain for your institution.
 ## course.id: The Canvas ID for the course.
 calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, grade.fun = NULL, post = NULL, domain = "https://canvas.auckland.ac.nz", course.id){
@@ -149,7 +150,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     }
     pr.df <- data.frame(pr.df, student_name = student.name,
                         assessor_name = assessor.name)
-    pr.df <- pr.df[, c(4, 6:8)]
+    pr.df <- pr.df[, c(2, 6:8)]
     colnames(item.scores) <- paste0("item", 1:n.items)
     score <- apply(item.scores, 1, mean, na.rm = TRUE)*n.items
     ## Determining completion of open-ended comments.
@@ -159,7 +160,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
                     "assignments", assignment.pa.id, "submissions", i, sep = "/"), "?",
                     "include=submission_comments")
         comment.df <- get.data(url)$submission_comments
-        author.ids <- comment.df$author_id[nchar(comment.df$comment) >= 20]
+        author.ids <- comment.df$author_id[nchar(comment.df$comment) >= 50]
         o.completed[pr.df$user_id == i & pr.df$assessor_id %in% author.ids] <- TRUE
     }
     pr.df <- data.frame(pr.df, o.completed, score, item.scores) 
@@ -208,7 +209,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     ## Putting stream information into the individual data frame.
     url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
     stream.category.df <- get.data(url)
-    stream.category.id <- stream.category.df$id[stream.category.df$name == "Stream"]
+    stream.category.id <- stream.category.df$id[stream.category.df$name == "Project Stream"]
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     stream.df <- get.data(url)
     stream.df <- stream.df[stream.df$group_category_id == stream.category.id, ]
@@ -280,11 +281,12 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
 ## stream: The stream name. This needs to match what appears in
 ##         Canvas. If a single stream is split into substreams, then
 ##         the substream names in Canvas must end with a number.
+## prefix: A prefix to add to the group name.
 ## absent: A vector of user IDs for students who are absent. Students
 ##         who are absent are removed prior to random allocation, and
 ##         get put in their own group with other absentees.
 ## WARNING: You can't have more than 26 groups in a substream, sorry lmao.
-allocate.groups <- function(group.size, group.category.name, stream, absent = integer(0), course.id, domain = "https://canvas.auckland.ac.nz"){
+allocate.groups <- function(group.size, group.category.name, stream, prefix = "", absent = integer(0), course.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
     stream.id <- streams.df$id[streams.df$name == stream]
@@ -306,7 +308,7 @@ allocate.groups <- function(group.size, group.category.name, stream, absent = in
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     groups.df <- get.data(url)
     groups.df <- groups.df[groups.df$group_category_id == group.category.id, ]
-    existing.substream.group.names <- groups.df$name[substr(groups.df$name, 1, 6 + nchar(stream)) == paste("Group", stream)]
+    existing.substream.group.names <- groups.df$name[substr(groups.df$name, 1, 1 + nchar(prefix) + nchar(stream)) == paste(prefix, stream)]
     if (length(existing.substream.group.names) == 0){
         start.letter <- "A"
     } else {
@@ -328,7 +330,7 @@ allocate.groups <- function(group.size, group.category.name, stream, absent = in
         out[[i]] <- shuffled.names.mat[i, ][!is.na(shuffled.names.mat[i, ])]
     }
     start.letter.number <- which(LETTERS == start.letter)
-    names(out) <- paste("Group", stream, LETTERS[start.letter.number:(start.letter.number + n.groups - 1)])
+    names(out) <- paste(prefix, stream, LETTERS[start.letter.number:(start.letter.number + n.groups - 1)])
     print(out)
     post <- readline(prompt = "Post groups? Type 'yes' to confirm.")
     if (post == "yes"){
