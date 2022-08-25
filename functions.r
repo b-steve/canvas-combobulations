@@ -153,17 +153,34 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     pr.df <- pr.df[, c(2, 6:8)]
     colnames(item.scores) <- paste0("item", 1:n.items)
     score <- apply(item.scores, 1, mean, na.rm = TRUE)*n.items
+    ## Setting up individual data frame.
+    individual.df <- people.df[people.df$id %in% unique(pr.df$user_id), c(1, 2)]
+    n.students <- nrow(individual.df)
     ## Determining completion of open-ended comments.
     o.completed <- logical(nrow(pr.df))
+    individual.df <- people.df[people.df$id %in% unique(pr.df$user_id), c(1, 2)]
+    n.students <- nrow(individual.df)
+    comments.list <- vector(mode = "list", length = n.students)
+    names(comments.list) <- individual.df$name
     for (i in unique(pr.df$user_id)){
         url <- paste0(paste("https://canvas.auckland.ac.nz", "/api/v1", "courses", course.id,
                     "assignments", assignment.pa.id, "submissions", i, sep = "/"), "?",
                     "include=submission_comments")
         comment.df <- get.data(url)$submission_comments
-        author.ids <- comment.df$author_id[nchar(comment.df$comment) >= 50]
-        o.completed[pr.df$user_id == i & pr.df$assessor_id %in% author.ids] <- TRUE
+        if (length(comment.df) > 0){
+            comment.df <- comment.df[nchar(comment.df$comment) >= 50, ]
+            author.ids <- comment.df$author_id
+            for (j in unique(author.ids)){
+                save.comments <- comments.list[[which(individual.df$id == j)]]
+                save.comments <- c(save.comments,
+                                   comment.df$comment[author.ids == j][length(comment.df$comment[author.ids == j])])
+                comments.list[[which(individual.df$id == j)]] <- save.comments
+            }
+            o.completed[pr.df$user_id == i & pr.df$assessor_id %in% author.ids] <- TRUE
+        }
     }
-    pr.df <- data.frame(pr.df, o.completed, score, item.scores) 
+    p.score <- apply(item.scores, 1, function(x) mean(!is.na(x)))*o.completed
+    pr.df <- data.frame(pr.df, o.completed, p.score, score, item.scores)
     ## Getting group category information.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     group.category.df <- get.data(url)
@@ -181,18 +198,22 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     names(group.info) <- group.names
     
     ## Creating a data frame with each individual's information.
-    individual.df <- people.df[people.df$id %in% unique(pr.df$user_id), c(1, 2)]
-    n.students <- nrow(individual.df)
     individual.df$pa.score <- tapply(pr.df$score, pr.df$user_id,
                                      mean, na.rm = TRUE)[as.character(individual.df$id)]/
         rubric.info$points_possible*5
     individual.df$p.completed <- tapply(apply(item.scores, 1, function(x) mean(!is.na(x))),
                                         pr.df$assessor_id, mean)[as.character(individual.df$id)]
     individual.df$o.completed <- numeric(n.students)
+    individual.df$o.same <- sapply(comments.list, function(x) (length(x) > 1) & (length(unique(x)) == 1))
+    individual.df$participation.score <- numeric(n.students)
+    individual.df$assessor.score <- numeric(n.students)
     for (i in 1:n.students){
         individual.df$o.completed[i] <- mean(pr.df$o.completed[pr.df$assessor_id == individual.df$id[i]])
+        individual.df$participation.score[i] <- mean(pr.df$p.score[pr.df$assessor_id == individual.df$id[i]])
+        individual.df$assessor.score[i] <- mean(pr.df$score[pr.df$assessor_id == individual.df$id[i]])/
+            rubric.info$points_possible*5
     }
-    individual.df$participation.score <- 0.75*individual.df$p.completed + 0.25*individual.df$o.completed
+    individual.df$participation.score[individual.df$o.same] <- 0
     ## Putting the group information into the individual data frame.
     group.id <- numeric(n.students)
     group.name <- character(n.students)
