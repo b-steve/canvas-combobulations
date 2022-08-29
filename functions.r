@@ -595,3 +595,33 @@ summarise.pa <- function(assignment.ids, assignment.pa.ids, domain = "https://ca
     pa.df$average <- apply(pa.df[, -(1:3)], 1, mean, na.rm = TRUE)
     list(pa = pa.df, pc = pc.df)
 }
+
+get.comments <- function(assignment.pa.id, stream = NULL, course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## Getting stream ID.
+    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
+    stream.category.df <- get.data(url)
+    stream.category.id <- stream.category.df$id[stream.category.df$name == "Project Stream"]
+    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+    stream.df <- get.data(url)
+    stream.df <- stream.df[stream.df$group_category_id == stream.category.id, ]
+    if (is.null(stream)){
+        stream.ids <- stream.df$id
+    } else {
+        stream.ids <- stream.df$id[stream.df$name %in% stream]
+    }
+    ## Getting all users in selected streams.
+    user.ids <- numeric(0)
+    for (i in stream.ids){
+        url <- paste(domain, "/api/v1", "groups", i, "users", sep = "/")
+        user.ids <- c(user.ids, get.data(url)$id)
+    }
+    n.students <- length(user.ids)
+    comments.list <- vector(mode = "list", length = n.students)
+    for (i in 1:n.students){
+        url <- paste0(paste(domain, "/api/v1", "courses", course.id,
+                            "assignments", assignment.pa.id, "submissions", user.ids[i], sep = "/"), "?",
+                      "include=submission_comments")
+        comments.list[[i]] <- get.data(url)$submission_comments$comment
+    }
+    sample(unlist(comments.list))
+}
