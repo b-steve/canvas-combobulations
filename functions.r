@@ -151,6 +151,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     pr.df <- data.frame(pr.df, student_name = student.name,
                         assessor_name = assessor.name)
     pr.df <- pr.df[, c(2, 6:8)]
+    ## Filtering out rows for students who have dropped out.
     colnames(item.scores) <- paste0("item", 1:n.items)
     score <- apply(item.scores, 1, mean, na.rm = TRUE)*n.items
     ## Setting up individual data frame.
@@ -181,6 +182,8 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     }
     p.score <- apply(item.scores, 1, function(x) mean(!is.na(x)))*o.completed
     pr.df <- data.frame(pr.df, o.completed, p.score, score, item.scores)
+    ## Removing rows for students who have dropped out.
+    pr.df <- pr.df[!is.na(pr.df$student_name) & !is.na(pr.df$assessor_name), ]
     ## Getting group category information.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     group.category.df <- get.data(url)
@@ -201,7 +204,8 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     individual.df$pa.score <- tapply(pr.df$score, pr.df$user_id,
                                      mean, na.rm = TRUE)[as.character(individual.df$id)]/
         rubric.info$points_possible*5
-    individual.df$p.completed <- tapply(apply(item.scores, 1, function(x) mean(!is.na(x))),
+    individual.df$p.completed <- tapply(apply(pr.df[, substr(names(pr.df), 1, 4) == "item"],
+                                              1, function(x) mean(!is.na(x))),
                                         pr.df$assessor_id, mean)[as.character(individual.df$id)]
     individual.df$o.completed <- numeric(n.students)
     individual.df$o.same <- sapply(comments.list, function(x) (length(x) > 1) & (length(unique(x)) == 1))
