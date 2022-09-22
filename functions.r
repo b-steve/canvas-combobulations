@@ -310,8 +310,13 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
 ## absent: A vector of user IDs for students who are absent. Students
 ##         who are absent are removed prior to random allocation, and
 ##         get put in their own group with other absentees.
+## no.allocation: If TRUE, then students aren't allocated to
+##                groups. All that happens is that empty groups are
+##                created on Canvas. This is useful if you want to
+##                manually allocate groups, but don't want to
+##                tediously create them all on Canvas.
 ## WARNING: You can't have more than 26 groups in a substream, sorry lmao.
-allocate.groups <- function(group.size, group.category.name, stream, prefix = "", absent = integer(0), course.id, domain = "https://canvas.auckland.ac.nz"){
+allocate.groups <- function(group.size, group.category.name, stream, prefix = "", absent = integer(0), no.allocation = FALSE, course.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
     stream.id <- streams.df$id[streams.df$name == stream]
@@ -375,12 +380,14 @@ allocate.groups <- function(group.size, group.category.name, stream, prefix = ""
                 add.member(group.id, i, domain)
             }
         }
-        for (i in 1:nrow(shuffled.ids.mat)){
-            group.id <- groups.df$id[groups.df$name == names(out)[i]]
-            for (j in 1:ncol(shuffled.ids.mat)){
-                user.id <- shuffled.ids.mat[i, j]
-                if (!is.na(user.id)){
-                    add.member(group.id, user.id, domain)
+        if (!no.allocation){
+            for (i in 1:nrow(shuffled.ids.mat)){
+                group.id <- groups.df$id[groups.df$name == names(out)[i]]
+                for (j in 1:ncol(shuffled.ids.mat)){
+                    user.id <- shuffled.ids.mat[i, j]
+                    if (!is.na(user.id)){
+                        add.member(group.id, user.id, domain)
+                    }
                 }
             }
         }
