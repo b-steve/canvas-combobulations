@@ -638,3 +638,15 @@ get.comments <- function(assignment.pa.id, stream = NULL, course.id, domain = "h
     }
     sample(unlist(comments.list))
 }
+
+## Summarises individual grades.
+individual.summary <- function(ta, sort = "final"){
+    if (sort == "final"){
+       out <- ta$individual[order(ta$individual$final.grade, decreasing = TRUE),
+                      c(2, 3, 10, 13, 14)]
+    } else {
+        out <- ta$individual[order(ta$individual$ta.score, decreasing = TRUE),
+                      c(2, 3, 10, 13, 14)]
+    }
+    out
+}
