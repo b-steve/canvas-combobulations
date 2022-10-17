@@ -61,13 +61,15 @@ post.grade <- function(grade, assignment.id, user.id, course.id, domain){
 }
 
 ## A function to post individual grades. Just need a named vector.
-post.individual.grades <- function(grades, user.id, assignment.id, course.id, domain = "https://canvas.auckland.ac.nz"){
+post.individual.grades <- function(grades, assignment.id, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting student list.
     url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
     people.df <- get.data(url)
+    student.names <- names(grades)
     n.students <- length(grades)
     for (i in 1:n.students){
-        post.grade(grades[i], assignment.id, user.id[i], course.id, domain)
+        user.id <- people.df$id[people.df$short_name == student.names[i]]
+        post.grade(grades[i], assignment.id, user.id, course.id, domain)
     }
 }
 
@@ -264,7 +266,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
         individual.df$group.grade <- numeric(n.students)
     } else {
         ## Putting the group grades into the individual data frame.
-        individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
+        individual.df$group.grade[individual.df$group.name != "Absent"] <- c(group.grades[individual.df$group.name], recursive = TRUE)
         ## Calculating final grades.
         for (i in 1:n.groups){
             if (group.names[i] != "Absent"){
