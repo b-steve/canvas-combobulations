@@ -266,7 +266,7 @@ calc.grades <- function(assignment.id, assignment.ta.id, group.grades = NULL, gr
         individual.df$group.grade <- numeric(n.students)
     } else {
         ## Putting the group grades into the individual data frame.
-        individual.df$group.grade <- c(group.grades[individual.df$group.name], recursive = TRUE)
+        individual.df$group.grade[individual.df$group.name != "Absent"] <- c(group.grades[individual.df$group.name], recursive = TRUE)
         ## Calculating final grades.
         for (i in 1:n.groups){
             if (group.names[i] != "Absent"){
