@@ -75,16 +75,16 @@ post.individual.grades <- function(grades, assignment.id, course.id, domain = "h
 
 ## The main function to calculate individual grades.
 ## assignment.id: The Canvas ID for the main assignment.
-## assignment.pa.id: The Canvas ID for the peer-assessment assignment.
+## assignment.ta.id: The Canvas ID for the teammate-appraisal assignment.
 ## group.grades: A list of group grades, with group names matching those on Canvas.
 ## grade.fun: A function to determine grades based on a group assessment and peer assessments.
 ## post: Whether or not to post grades to Canvas; either TRUE or FALSE. If NULL, the user is prompted. 
 ## domain: The Canvas domain for your institution.
 ## course.id: The Canvas ID for the course.
-calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, grade.fun = NULL, post = NULL, domain = "https://canvas.auckland.ac.nz", course.id){
+calc.grades <- function(assignment.id, assignment.ta.id, group.grades = NULL, grade.fun = NULL, post = NULL, domain = "https://canvas.auckland.ac.nz", course.id){
     ## Indicator for whether we only do peer-assessment participation grading.
-    pa.only <- is.null(group.grades)
-    if (!pa.only & is.null(grade.fun)){
+    ta.only <- is.null(group.grades)
+    if (!ta.only & is.null(grade.fun)){
         stop("No 'grade.fun' specified.")
     }
     ## Getting student list.
@@ -99,21 +99,21 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     group.category.id <- assign.info$group_category_id
     
     ## Getting peer-assessment assignment information.
-    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.pa.id, sep = "/")
-    assign.pa.info <- get.data(url)
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.ta.id, sep = "/")
+    assign.ta.info <- get.data(url)
 
     ## Getting rubric ID.
-    rubric.id <- assign.pa.info$rubric_settings$id
+    rubric.id <- assign.ta.info$rubric_settings$id
 
     ## Getting the association ID for the assignment-to-rubric matching.
     url <- paste0(paste(domain, "/api/v1", "courses", course.id, "rubrics", rubric.id, sep = "/"),
                   "?", "include=associations")
     rubric.association.df <- get.data(url)$associations
     rubric.association.id <-
-        rubric.association.df$id[rubric.association.df$association_id == assignment.pa.id]
+        rubric.association.df$id[rubric.association.df$association_id == assignment.ta.id]
     
     ## Getting peer-review completion summary.
-    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.pa.id,
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.ta.id,
                  "peer_reviews",  sep = "/")
     pr.df <- get.data(url)
 
@@ -136,14 +136,14 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     }
     pr.items.df <- do.call(rbind, pr.items.list)
     ## Combining the completion and assessment data frame and adding student/assessor names.
-    n.pas <- nrow(pr.df)
+    n.tas <- nrow(pr.df)
     n.completed <- nrow(pr.assessments.df)
     all.names <- people.df$short_name
     names(all.names) <- people.df$id
     student.name <- all.names[as.character(pr.df$user_id)]
     assessor.name <- all.names[as.character(pr.df$assessor_id)]
-    score <- rep(NA, n.pas)
-    item.scores <- matrix(NA, nrow = n.pas, ncol = n.items)
+    score <- rep(NA, n.tas)
+    item.scores <- matrix(NA, nrow = n.tas, ncol = n.items)
     for (i in 1:n.completed){
         score[pr.df$asset_id == pr.assessments.df$artifact_id[i] &
               pr.df$assessor_id == pr.assessments.df$assessor_id[i]] <- pr.assessments.df$score[i]
@@ -167,7 +167,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     names(comments.list) <- individual.df$name
     for (i in unique(pr.df$user_id)){
         url <- paste0(paste("https://canvas.auckland.ac.nz", "/api/v1", "courses", course.id,
-                    "assignments", assignment.pa.id, "submissions", i, sep = "/"), "?",
+                    "assignments", assignment.ta.id, "submissions", i, sep = "/"), "?",
                     "include=submission_comments")
         comment.df <- get.data(url)$submission_comments
         if (length(comment.df) > 0){
@@ -203,7 +203,7 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     names(group.info) <- group.names
     
     ## Creating a data frame with each individual's information.
-    individual.df$pa.score <- tapply(pr.df$score, pr.df$user_id,
+    individual.df$ta.score <- tapply(pr.df$score, pr.df$user_id,
                                      mean, na.rm = TRUE)[as.character(individual.df$id)]/
         rubric.info$points_possible*5
     individual.df$p.completed <- tapply(apply(pr.df[, substr(names(pr.df), 1, 4) == "item"],
@@ -260,9 +260,9 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     individual.df$stream.id <- stream.id
     individual.df$stream.name <- stream.name
     ## Replacing NaN with NA in the peer-appraisal scores.
-    individual.df$pa.score[is.nan(individual.df$pa.score)] <- NA
+    individual.df$ta.score[is.nan(individual.df$ta.score)] <- NA
     final.grade <- rep(NA, n.students)
-    if (pa.only){
+    if (ta.only){
         individual.df$group.grade <- numeric(n.students)
     } else {
         ## Putting the group grades into the individual data frame.
@@ -272,13 +272,13 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
             if (group.names[i] != "Absent"){
                 final.grade[individual.df$group.name == group.names[i]] <-
                     grade.fun(group.grades[[group.names[i]]],
-                              individual.df$pa.score[individual.df$group.name == group.names[i]])
+                              individual.df$ta.score[individual.df$group.name == group.names[i]])
             }
         }
     }
     individual.df$final.grade <- final.grade
     if (is.null(post)){
-        print(individual.df[, c("name", "participation.score", "group.grade", "pa.score", "final.grade")])
+        print(individual.df[, c("name", "participation.score", "group.grade", "ta.score", "final.grade")])
         post <- readline(prompt = "Post grades? Type 'yes' to confirm.")
     } else {
         if (post){
@@ -287,12 +287,12 @@ calc.grades <- function(assignment.id, assignment.pa.id, group.grades = NULL, gr
     }
     if (post == "yes"){
         for (i in 1:n.students){
-            if (!pa.only){
+            if (!ta.only){
                 if (!is.na(individual.df$final.grade[i])){
                     post.grade(round(individual.df$final.grade[i], 1), assignment.id, individual.df$id[i], course.id, domain)
                 }
             }
-            post.grade(round(100*individual.df$participation.score[i], 1), assignment.pa.id, individual.df$id[i], course.id, domain)
+            post.grade(round(100*individual.df$participation.score[i], 1), assignment.ta.id, individual.df$id[i], course.id, domain)
         }
     }
     
@@ -568,15 +568,15 @@ team.count <- function(group.category.names, stream, course.id, domain){
     out
 }
 
-## A function to summarise peer-appraisals.
-summarise.pa <- function(assignment.ids, assignment.pa.ids, domain = "https://canvas.auckland.ac.nz", course.id){
+## A function to summarise teammate-appraisals across multiple activities.
+summarise.ta <- function(assignment.ids, assignment.ta.ids, domain = "https://canvas.auckland.ac.nz", course.id){
     ## Getting student list.
     url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
-    pa.df <- get.data(url)[, c("id", "name")]
-    pc.df <- pa.df
-    n.people <- nrow(pa.df)
-    n.assignments <- length(assignment.pa.ids)
-    pa.mat <- matrix(0, nrow = n.people, ncol = n.assignments)
+    ta.df <- get.data(url)[, c("id", "name")]
+    pc.df <- ta.df
+    n.people <- nrow(ta.df)
+    n.assignments <- length(assignment.ta.ids)
+    ta.mat <- matrix(0, nrow = n.people, ncol = n.assignments)
     pc.mat <- matrix(0, nrow = n.people, ncol = n.assignments)
     for (i in 1:n.assignments){
         ## Getting assignment information.
@@ -594,22 +594,22 @@ summarise.pa <- function(assignment.ids, assignment.pa.ids, domain = "https://ca
         ## Getting information for the different groups.
         group.ids <- group.category.df$id
         n.groups <- nrow(group.category.df)
-        grades.list <- calc.grades(assignment.id = assignment.ids[i], assignment.pa.id = assignment.pa.ids[i],
+        grades.list <- calc.grades(assignment.id = assignment.ids[i], assignment.ta.id = assignment.ta.ids[i],
                                      group.grades = NULL, grade.fun = NULL, post = FALSE, domain = domain,
                                    course.id = course.id)
-        individual.df <- grades.list$individual[, c("id", "stream.name", "name", "pa.score", "p.completed")]
-        pa.df <- merge(pa.df, individual.df[, c("id", "stream.name"[i == 1], "pa.score")], by = "id", all = TRUE, sort = FALSE)
+        individual.df <- grades.list$individual[, c("id", "stream.name", "name", "ta.score", "p.completed")]
+        ta.df <- merge(ta.df, individual.df[, c("id", "stream.name"[i == 1], "ta.score")], by = "id", all = TRUE, sort = FALSE)
         pc.df <- merge(pc.df, individual.df[, c("id", "stream.name"[i == 1], "p.completed")], by = "id", all = TRUE, sort = FALSE)
-        names(pa.df)[3 + i] <- paste0("pa.score.", i)
+        names(ta.df)[3 + i] <- paste0("ta.score.", i)
         names(pc.df)[3 + i] <- paste0("p.completed.", i)
     }
-    pa.df <- pa.df[apply(pa.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
-    pc.df <- pc.df[apply(pa.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
-    pa.df$average <- apply(pa.df[, -(1:3)], 1, mean, na.rm = TRUE)
-    list(pa = pa.df, pc = pc.df)
+    ta.df <- ta.df[apply(ta.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
+    pc.df <- pc.df[apply(ta.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
+    ta.df$average <- apply(ta.df[, -(1:3)], 1, mean, na.rm = TRUE)
+    list(pa = ta.df, pc = pc.df)
 }
 
-get.comments <- function(assignment.pa.id, stream = NULL, course.id, domain = "https://canvas.auckland.ac.nz"){
+get.comments <- function(assignment.ta.id, stream = NULL, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting stream ID.
     url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
     stream.category.df <- get.data(url)
@@ -632,7 +632,7 @@ get.comments <- function(assignment.pa.id, stream = NULL, course.id, domain = "h
     comments.list <- vector(mode = "list", length = n.students)
     for (i in 1:n.students){
         url <- paste0(paste(domain, "/api/v1", "courses", course.id,
-                            "assignments", assignment.pa.id, "submissions", user.ids[i], sep = "/"), "?",
+                            "assignments", assignment.ta.id, "submissions", user.ids[i], sep = "/"), "?",
                       "include=submission_comments")
         comments.list[[i]] <- get.data(url)$submission_comments$comment
     }
@@ -640,13 +640,20 @@ get.comments <- function(assignment.pa.id, stream = NULL, course.id, domain = "h
 }
 
 ## Summarises individual grades.
+## ta: An object returned by calc.grades().
+## sort: "final" to sort by final grade, "ta" to sort by teammate
+##       appraisal, "none" to sort by student name.
+
+
 individual.summary <- function(ta, sort = "final"){
     if (sort == "final"){
        out <- ta$individual[order(ta$individual$final.grade, decreasing = TRUE),
                       c(2, 3, 10, 13, 14)]
-    } else {
+    } else if (sort == "ta") {
         out <- ta$individual[order(ta$individual$ta.score, decreasing = TRUE),
                       c(2, 3, 10, 13, 14)]
+    } else {
+        out <- ta$individual[, c(2, 3, 10, 13, 14)]
     }
     out
 }
