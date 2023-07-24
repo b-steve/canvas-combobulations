@@ -42,6 +42,21 @@ create.groups <- function(group.names, group.category.name, course.id, domain){
     }
 }
 
+get.overrides <- function(assignment.id){
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, "overrides", sep = "/")
+    
+}
+
+lock.assignment <- function(student.id, assignment.id, course.id){
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, "overrides", sep = "/") 
+    F.ids.arg <- paste(paste0("-F \'assignment_override[student_ids][]=" , student.id, "\'"), collapse = " ")
+    title.arg <- paste0("\'assignment_override[title]=", "streamlock", "\'")
+    unlock.arg <- paste0("\'assignment_override[unlock_at]=", "2024-10-21T18:48:00Z", "\'")
+    auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
+    cmd <- paste("curl", url, "-X POST", F.ids.arg, "-F", title.arg, "-F", unlock.arg, "-H", auth.arg, "> /dev/null")
+    system(cmd)
+}
+
 ## A function to add a member to a group.
 add.member <- function(group.id, user.id, domain){
     url <- paste(domain, "/api/v1", "groups", group.id, "memberships", sep = "/")
