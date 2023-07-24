@@ -23,6 +23,28 @@ get.data <- function(url){
     out
 }
 
+## A function to get stream groupings.
+get.streams <- function(course.id, domain){
+    ## Getting the group category ID number.
+    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
+    group.category.df <- get.data(url)
+    group.category.id <- group.category.df$id[group.category.df$name == "Stream"]
+    ## Getting a data frame of group information.
+    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
+    group.df <- get.data(url)
+    group.df <- group.df[group.df$group_category_id == group.category.id, ]
+    group.names <- group.df$name
+    group.ids <- group.df$id
+    n.groups <- length(group.ids)
+    ## Creating group membership data frames.
+    group.membership.dfs <- vector(mode = "list", length = 4)
+    for (i in 1:n.groups){
+        url <- paste(domain, "/api/v1", "groups", group.ids[i], "users", sep = "/")
+        group.membership.dfs[[i]] <- data.frame(get.data(url)[, c(1, 2)], stream = group.names[i])
+    }
+    do.call(rbind, group.membership.dfs)
+}
+
 ## A function to create groups.
 create.groups <- function(group.names, group.category.name, course.id, domain){
     ## Getting the group category ID number.
