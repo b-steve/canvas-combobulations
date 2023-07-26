@@ -110,6 +110,31 @@ post.individual.grades <- function(grades, assignment.id, course.id, domain = "h
     }
 }
 
+## A function to copy a Hihi assignment description and use it for
+## Ruru, Whio, and Kākā descriptions, creating these assignments if
+## necessary.
+copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams = c("Ruru", "Whio", "Kākā"), course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## Getting information about original assignment.
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, sep = "/")
+    orig.assign.df <- get.data(url)
+    orig.assign.name <- orig.assign.df$name
+    orig.assign.stem <- strsplit(orig.assign.name, ":")[[1]][1]
+    ## Checking if the original assignment name begins with the original stream name.
+    if (orig.assign.stem != orig.stream){
+        stop("The assignment name must start with the original stream name, followed by a colon.")
+    }
+    ## Getting the rest of the assignment name, following the original stream name.
+    assign.name.suffix <- substr(orig.assign.name, nchar(orig.assign.stem) + 1, nchar(orig.assign.name))
+    ## Getting a list of all course assignment names.
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", sep = "/")
+    all.assign.df <- get.data(url)
+    all.names <- all.assign.df$name
+    ## Checking if an assignment exists for the other streams.
+
+
+    orig.assign.df
+}
+
 ## The main function to calculate individual grades.
 ## assignment.id: The Canvas ID for the main assignment.
 ## assignment.ta.id: The Canvas ID for the teammate-appraisal assignment.
