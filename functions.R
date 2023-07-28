@@ -110,6 +110,25 @@ post.individual.grades <- function(grades, assignment.id, course.id, domain = "h
     }
 }
 
+## Creates assignments for the four streams and ensures each is
+## available to the correct students.
+create.assignment <- function(assignment.name, streams = c("Hihi", "Ruru", "Whio", "Kākā"), course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## URL for the curl POST.
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", sep = "/")
+    auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
+    ## Creating an assignment for each stream.
+    n.streams <- length(streams)
+    for (i in 1:n.streams){
+        cmd <- paste("curl", url, "-X POST -F", paste0( "\'assignment[name]=", streams[i], ": ", assignment.name, "\'"), "-H", auth.arg, "> /dev/null")
+        system(cmd)
+    }
+    ## Still to do:
+    ## - Insert the assignment into the correct group.
+    ## - Create overrides for the individual students.
+    ## - Set appropriate deadlines.
+    ## - Set assignment[only_visible_to_overrides]=true.
+}
+
 ## A function to copy a Hihi assignment description and use it for
 ## Ruru, Whio, and Kākā descriptions, creating these assignments if
 ## necessary.
@@ -130,9 +149,7 @@ copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams =
     all.assign.df <- get.data(url)
     all.names <- all.assign.df$name
     ## Checking if an assignment exists for the other streams.
-
-
-    orig.assign.df
+    ## Still some stuff to do here.
 }
 
 ## The main function to calculate individual grades.
