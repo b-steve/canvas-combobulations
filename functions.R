@@ -161,6 +161,7 @@ create.assignment <- function(assignment.name, streams = c("Hihi", "Ruru", "Whio
 ## Ruru, Whio, and Kākā descriptions, creating these assignments if
 ## necessary.
 copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams = c("Ruru", "Whio", "Kākā"), course.id, domain = "https://canvas.auckland.ac.nz"){
+    auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
     ## Getting information about original assignment.
     url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, sep = "/")
     orig.assign.df <- get.data(url)
@@ -175,9 +176,22 @@ copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams =
     ## Getting a list of all course assignment names.
     url <- paste(domain, "/api/v1", "courses", course.id, "assignments", sep = "/")
     all.assign.df <- get.data(url)
-    all.names <- all.assign.df$name
-    ## Checking if an assignment exists for the other streams.
-    ## Still some stuff to do here.
+    n.other.streams <- length(other.streams)
+    ## Getting original description.
+    orig.description <- orig.assign.df$description
+    for (i in 1:n.other.streams){
+        ## Getting ID for other assignment.
+        other.assignment.id <- all.assign.df$id[all.assign.df$name == paste0(other.streams[i], assign.name.suffix)]
+        ## Updating description.
+        new.description <- gsub(orig.stream, other.streams[i], orig.description)
+        new.description <- gsub(tolower(orig.stream), tolower(other.streams[i]), new.description)
+        new.description <- gsub(toupper(orig.stream), toupper(other.streams[i]), new.description)
+        new.description <- gsub("\"", "\\\\\"", new.description)
+        ## Editing new assignment description.
+        url <- paste(domain, "/api/v1", "courses", course.id, "assignments", other.assignment.id, sep = "/")
+        cmd <- paste("curl", url, "-X PUT -F", paste0("\'assignment[description]=\"", new.description, "\"\'"), "-H", auth.arg, "> /dev/null")
+        system(cmd)
+    }
 }
 
 ## The main function to calculate individual grades.
