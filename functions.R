@@ -23,12 +23,8 @@ get.data <- function(url){
     out
 }
 
-## A function to get stream groupings.
-get.streams <- function(course.id, domain){
-    ## Getting the group category ID number.
-    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
-    group.category.df <- get.data(url)
-    group.category.id <- group.category.df$id[group.category.df$name == "Stream"]
+## A function to get a data frame of student groupings.
+get.groups <- function(course.id, group.category.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting a data frame of group information.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     group.df <- get.data(url)
@@ -45,8 +41,18 @@ get.streams <- function(course.id, domain){
     do.call(rbind, group.membership.dfs)
 }
 
+## A function to get stream groupings.
+get.streams <- function(course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## Getting the group category ID number.
+    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
+    group.category.df <- get.data(url)
+    group.category.id <- group.category.df$id[group.category.df$name == "Stream"]
+    ## Getting a data frame of group information.
+    get.groups(course.id, group.category.id, domain)
+}
+
 ## A function to create groups.
-create.groups <- function(group.names, group.category.name, course.id, domain){
+create.groups <- function(group.names, group.category.name, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting the group category ID number.
     url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
     group.category.df <- get.data(url)
@@ -64,12 +70,7 @@ create.groups <- function(group.names, group.category.name, course.id, domain){
     }
 }
 
-get.overrides <- function(assignment.id){
-    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, "overrides", sep = "/")
-    
-}
-
-lock.assignment <- function(student.id, assignment.id, course.id){
+lock.assignment <- function(student.id, assignment.id, course.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, "overrides", sep = "/") 
     F.ids.arg <- paste(paste0("-F \'assignment_override[student_ids][]=" , student.id, "\'"), collapse = " ")
     title.arg <- paste0("\'assignment_override[title]=", "streamlock", "\'")
@@ -80,7 +81,7 @@ lock.assignment <- function(student.id, assignment.id, course.id){
 }
 
 ## A function to add a member to a group.
-add.member <- function(group.id, user.id, domain){
+add.member <- function(group.id, user.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "groups", group.id, "memberships", sep = "/")
     user.arg <- paste0("\'user_id=", user.id, "\'")
     auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
@@ -88,7 +89,7 @@ add.member <- function(group.id, user.id, domain){
     system(cmd)
 }
 
-post.grade <- function(grade, assignment.id, user.id, course.id, domain){
+post.grade <- function(grade, assignment.id, user.id, course.id, domain = "https://canvas.auckland.ac.nz"){
     url <- paste(domain, "/api/v1", "courses", course.id, "assignments",
                  assignment.id, "submissions", "update_grades", sep = "/")
     auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
@@ -110,23 +111,50 @@ post.individual.grades <- function(grades, assignment.id, course.id, domain = "h
     }
 }
 
+## A function to assign only one stream to an assignment.
+assign.to.stream <- function(course.id, assignment.id, stream.name, domain = "https://canvas.auckland.ac.nz"){
+    ## Sanitising input.
+    stream.name.sanitised <- gsub("ā", "a", stream.name)
+    ## Getting stream information.
+    stream.df <- get.streams(course.id, domain)
+    student.id <- stream.df$id[stream.df$stream == stream.name.sanitised]
+    ## Creating overrides for the students in the stream.
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, "overrides", sep = "/") 
+    F.ids.arg <- paste(paste0("-F \'assignment_override[student_ids][]=" , student.id, "\'"), collapse = " ")
+    title.arg <- paste0("\'assignment_override[title]=", "streamassign", "\'")
+    auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
+    cmd <- paste("curl", url, "-X POST", F.ids.arg, "-F", title.arg, "-H", auth.arg, "> /dev/null")
+    system(cmd)
+    ## Making assignment only visible to overrides.
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, sep = "/")
+    cmd <- paste("curl", url, "-X PUT -F \'assignment[only_visible_to_overrides]=true\' -H", auth.arg, "> /dev/null")
+    system(cmd)
+}
+
+
 ## Creates assignments for the four streams and ensures each is
 ## available to the correct students.
-create.assignment <- function(assignment.name, streams = c("Hihi", "Ruru", "Whio", "Kākā"), course.id, domain = "https://canvas.auckland.ac.nz"){
-    ## URL for the curl POST.
-    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", sep = "/")
+create.assignment <- function(assignment.name, streams = c("Hihi", "Ruru", "Whio", "Kākā"), assignment.group.name, course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## Getting assignment group ID, if name is provided.
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignment_groups", sep = "/")
+    assignment.group.df <- get.data(url)
+    assignment.group.id <- assignment.group.df$id[assignment.group.name == assignment.group.df$name]
     auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
     ## Creating an assignment for each stream.
     n.streams <- length(streams)
     for (i in 1:n.streams){
-        cmd <- paste("curl", url, "-X POST -F", paste0( "\'assignment[name]=", streams[i], ": ", assignment.name, "\'"), "-H", auth.arg, "> /dev/null")
+        ## URL for the curl POST.
+        url <- paste(domain, "/api/v1", "courses", course.id, "assignments", sep = "/")
+        ## Creating assignment name.
+        full.assignment.name <- paste0(streams[i], ": ", assignment.name)
+        cmd <- paste("curl", url, "-X POST -F", paste0( "\'assignment[name]=", full.assignment.name, "\'"), paste0( "-F \'assignment[assignment_group_id]=", assignment.group.id, "\'"), "-H", auth.arg, "> /dev/null")
         system(cmd)
+        ## Getting assignment ID for the newly created assignment.
+        url <- paste(domain, "/api/v1", "courses", course.id, "assignment_groups", assignment.group.id, "assignments", sep = "/")
+        assignment.df <- get.data(url)
+        assignment.id <- assignment.df$id[assignment.df$name == full.assignment.name]
+        assign.to.stream(course.id, assignment.id, streams[i])
     }
-    ## Still to do:
-    ## - Insert the assignment into the correct group.
-    ## - Create overrides for the individual students.
-    ## - Set appropriate deadlines.
-    ## - Set assignment[only_visible_to_overrides]=true.
 }
 
 ## A function to copy a Hihi assignment description and use it for
@@ -596,7 +624,7 @@ letter.count <- function(x, group.names){
     table(factor(strsplit(paste(x, collapse = ""), split = "")[[1]], levels = group.names))
 }
 
-team.count <- function(group.category.names, stream, course.id, domain){
+team.count <- function(group.category.names, stream, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting student information for the stream.
     url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
     streams.df <- get.data(url)
