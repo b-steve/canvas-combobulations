@@ -187,6 +187,7 @@ copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams =
         new.description <- gsub(tolower(orig.stream), tolower(other.streams[i]), new.description)
         new.description <- gsub(toupper(orig.stream), toupper(other.streams[i]), new.description)
         new.description <- gsub("\"", "\\\\\"", new.description)
+        new.description <- gsub("\'", "<span>&#39;</span>", new.description)
         ## Editing new assignment description.
         url <- paste(domain, "/api/v1", "courses", course.id, "assignments", other.assignment.id, sep = "/")
         cmd <- paste("curl", url, "-X PUT -F", paste0("\'assignment[description]=\"", new.description, "\"\'"), "-H", auth.arg, "> /dev/null")
