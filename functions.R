@@ -615,42 +615,10 @@ summarise.ta <- function(assignment.ids, assignment.ta.ids, domain = "https://ca
     list(pa = ta.df, pc = pc.df)
 }
 
-get.comments <- function(assignment.ta.id, stream = NULL, course.id, domain = "https://canvas.auckland.ac.nz"){
-    ## Getting stream ID.
-    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
-    stream.category.df <- get.data(url)
-    stream.category.id <- stream.category.df$id[stream.category.df$name == "Project Stream"]
-    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
-    stream.df <- get.data(url)
-    stream.df <- stream.df[stream.df$group_category_id == stream.category.id, ]
-    if (is.null(stream)){
-        stream.ids <- stream.df$id
-    } else {
-        stream.ids <- stream.df$id[stream.df$name %in% stream]
-    }
-    ## Getting all users in selected streams.
-    user.ids <- numeric(0)
-    for (i in stream.ids){
-        url <- paste(domain, "/api/v1", "groups", i, "users", sep = "/")
-        user.ids <- c(user.ids, get.data(url)$id)
-    }
-    n.students <- length(user.ids)
-    comments.list <- vector(mode = "list", length = n.students)
-    for (i in 1:n.students){
-        url <- paste0(paste(domain, "/api/v1", "courses", course.id,
-                            "assignments", assignment.ta.id, "submissions", user.ids[i], sep = "/"), "?",
-                      "include=submission_comments")
-        comments.list[[i]] <- get.data(url)$submission_comments$comment
-    }
-    sample(unlist(comments.list))
-}
-
 ## Summarises individual grades.
 ## ta: An object returned by calc.grades().
 ## sort: "final" to sort by final grade, "ta" to sort by teammate
 ##       appraisal, "none" to sort by student name.
-
-
 individual.summary <- function(ta, sort = "final"){
     if (sort == "final"){
        out <- ta$individual[order(ta$individual$final.grade, decreasing = TRUE),
