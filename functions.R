@@ -51,6 +51,12 @@ get.streams <- function(course.id, domain = "https://canvas.auckland.ac.nz"){
     get.groups(course.id, group.category.id, domain)
 }
 
+## A function to get student data.
+get.user.data <- function(course.id, domain = "https://canvas.auckland.ac.nz"){
+    url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
+    get.data(url)
+}
+
 ## A function to create groups.
 create.groups <- function(group.names, group.category.name, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting the group category ID number.
@@ -197,210 +203,43 @@ copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams =
 
 ## The main function to calculate individual grades.
 ## assignment.id: The Canvas ID for the main assignment.
-## assignment.ta.id: The Canvas ID for the teammate-appraisal assignment.
 ## group.grades: A list of group grades, with group names matching those on Canvas.
+## appraisal.scores: A data frame extracted from the FeedbackFruits analytics.
 ## grade.fun: A function to determine grades based on a group assessment and peer assessments.
 ## post: Whether or not to post grades to Canvas; either TRUE or FALSE. If NULL, the user is prompted. 
 ## domain: The Canvas domain for your institution.
 ## course.id: The Canvas ID for the course.
-calc.grades <- function(assignment.id, assignment.ta.id, group.grades = NULL, grade.fun = NULL, post = NULL, domain = "https://canvas.auckland.ac.nz", course.id){
-    ## Indicator for whether we only do peer-assessment participation grading.
-    ta.only <- is.null(group.grades)
-    if (!ta.only & is.null(grade.fun)){
-        stop("No 'grade.fun' specified.")
-    }
-    ## Getting student list.
-    url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
-    people.df <- get.data(url)
-    
-    ## Getting assignment information.
-    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, sep = "/")
-    assign.info <- get.data(url)
-    
-    ## Getting group category ID.
-    group.category.id <- assign.info$group_category_id
-    
-    ## Getting peer-assessment assignment information.
-    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.ta.id, sep = "/")
-    assign.ta.info <- get.data(url)
-
-    ## Getting rubric ID.
-    rubric.id <- assign.ta.info$rubric_settings$id
-
-    ## Getting the association ID for the assignment-to-rubric matching.
-    url <- paste0(paste(domain, "/api/v1", "courses", course.id, "rubrics", rubric.id, sep = "/"),
-                  "?", "include=associations")
-    rubric.association.df <- get.data(url)$associations
-    rubric.association.id <-
-        rubric.association.df$id[rubric.association.df$association_id == assignment.ta.id]
-    
-    ## Getting peer-review completion summary.
-    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.ta.id,
-                 "peer_reviews",  sep = "/")
-    pr.df <- get.data(url)
-
-    ## Getting peer-assessment information.
-    url <- paste0(paste(domain, "/api/v1", "courses", course.id, "rubrics", rubric.id, sep = "/"),
-                  "?", "include=peer_assessments&style=full")
-    rubric.info <- get.data(url)
-    pr.assessments.df <- rubric.info$assessments
-    ## Keeping only the assessments from the assignment we want.
-    pr.assessments.df <-
-        pr.assessments.df[pr.assessments.df$rubric_association_id == rubric.association.id, ]
-    ## Separating out the data frame from the data list.
-    pr.assessments.data <- pr.assessments.df$data
-    pr.assessments.df <- pr.assessments.df[, names(pr.assessments.df) != "data" &
-                                             names(pr.assessments.df) != "rubric_association"]
-    pr.items.list <- sapply(pr.assessments.data, function(x) x$points, simplify = FALSE)
-    n.items <- max(sapply(pr.items.list, length))
-    for (i in which(sapply(pr.items.list, length) == 0)){
-        pr.items.list[[i]] <- rep(NA, n.items)
-    }
-    pr.items.df <- do.call(rbind, pr.items.list)
-    ## Combining the completion and assessment data frame and adding student/assessor names.
-    n.tas <- nrow(pr.df)
-    n.completed <- nrow(pr.assessments.df)
-    all.names <- people.df$short_name
-    names(all.names) <- people.df$id
-    student.name <- all.names[as.character(pr.df$user_id)]
-    assessor.name <- all.names[as.character(pr.df$assessor_id)]
-    score <- rep(NA, n.tas)
-    item.scores <- matrix(NA, nrow = n.tas, ncol = n.items)
-    for (i in 1:n.completed){
-        score[pr.df$asset_id == pr.assessments.df$artifact_id[i] &
-              pr.df$assessor_id == pr.assessments.df$assessor_id[i]] <- pr.assessments.df$score[i]
-        item.scores[pr.df$asset_id == pr.assessments.df$artifact_id[i] &
-              pr.df$assessor_id == pr.assessments.df$assessor_id[i], ] <- pr.items.df[i, ]
-    }
-    pr.df <- data.frame(pr.df, student_name = student.name,
-                        assessor_name = assessor.name)
-    pr.df <- pr.df[, c(2, 6:8)]
-    ## Filtering out rows for students who have dropped out.
-    colnames(item.scores) <- paste0("item", 1:n.items)
-    score <- apply(item.scores, 1, mean, na.rm = TRUE)*n.items
-    ## Setting up individual data frame.
-    individual.df <- people.df[people.df$id %in% unique(pr.df$user_id), c(1, 2)]
-    n.students <- nrow(individual.df)
-    ## Determining completion of open-ended comments.
-    o.completed <- logical(nrow(pr.df))
-    individual.df <- people.df[people.df$id %in% unique(pr.df$user_id), c(1, 2)]
-    n.students <- nrow(individual.df)
-    comments.list <- vector(mode = "list", length = n.students)
-    names(comments.list) <- individual.df$name
-    for (i in unique(pr.df$user_id)){
-        url <- paste0(paste("https://canvas.auckland.ac.nz", "/api/v1", "courses", course.id,
-                    "assignments", assignment.ta.id, "submissions", i, sep = "/"), "?",
-                    "include=submission_comments")
-        comment.df <- get.data(url)$submission_comments
-        if (length(comment.df) > 0){
-            comment.df <- comment.df[nchar(comment.df$comment) >= 50, ]
-            author.ids <- comment.df$author_id
-            for (j in unique(author.ids)){
-                save.comments <- comments.list[[which(individual.df$id == j)]]
-                save.comments <- c(save.comments,
-                                   comment.df$comment[author.ids == j][length(comment.df$comment[author.ids == j])])
-                comments.list[[which(individual.df$id == j)]] <- save.comments
-            }
-            o.completed[pr.df$user_id == i & pr.df$assessor_id %in% author.ids] <- TRUE
-        }
-    }
-    p.score <- apply(item.scores, 1, function(x) mean(!is.na(x)))*o.completed
-    pr.df <- data.frame(pr.df, o.completed, p.score, score, item.scores)
-    ## Removing rows for students who have dropped out.
-    pr.df <- pr.df[!is.na(pr.df$student_name) & !is.na(pr.df$assessor_name), ]
-    ## Getting group category information.
-    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
-    group.category.df <- get.data(url)
-    group.category.df <- group.category.df[group.category.df$group_category_id == group.category.id, ]
-    
-    ## Getting information for the different groups.
-    group.ids <- group.category.df$id
-    n.groups <- nrow(group.category.df)
-    group.info <- vector(mode = "list", length = n.groups)
-    for (i in 1:n.groups){
-        url <- paste(domain, "/api/v1", "groups", group.ids[i], "users", sep = "/")
-        group.info[[i]] <- get.data(url)
-    }
-    group.names <- group.category.df$name
-    names(group.info) <- group.names
-    
-    ## Creating a data frame with each individual's information.
-    individual.df$ta.score <- tapply(pr.df$score, pr.df$user_id,
-                                     mean, na.rm = TRUE)[as.character(individual.df$id)]/
-        rubric.info$points_possible*5
-    individual.df$p.completed <- tapply(apply(pr.df[, substr(names(pr.df), 1, 4) == "item"],
-                                              1, function(x) mean(!is.na(x))),
-                                        pr.df$assessor_id, mean)[as.character(individual.df$id)]
-    individual.df$o.completed <- numeric(n.students)
-    individual.df$o.same <- sapply(comments.list, function(x) (length(x) > 1) & (length(unique(x)) == 1))
-    individual.df$participation.score <- numeric(n.students)
-    individual.df$assessor.score <- numeric(n.students)
+calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, grade.fun = NULL, post = NULL, course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## Extracting variables from appraisal scores.
+    student.name <- appraisal.scores[, 2]
+    student.group <- sapply(strsplit(appraisal.scores[, 1], ": "), function(x) x[2])
+    n.students <- length(student.name)
+    n.groups <- length(group.grades)
+    student.id <- numeric(n.students)
+    ## Getting the user IDs, rather than the SIS user IDs.
+    user.df <- get.user.data(course.id, domain)
     for (i in 1:n.students){
-        individual.df$o.completed[i] <- mean(pr.df$o.completed[pr.df$assessor_id == individual.df$id[i]])
-        individual.df$participation.score[i] <- mean(pr.df$p.score[pr.df$assessor_id == individual.df$id[i]])
-        individual.df$assessor.score[i] <- mean(pr.df$score[pr.df$assessor_id == individual.df$id[i]])/
-            rubric.info$points_possible*5
+        student.id[i] <- user.df$id[user.df$name == student.name[i]]
     }
-    individual.df$participation.score[individual.df$o.same] <- 0
-    ## Putting the group information into the individual data frame.
-    group.id <- numeric(n.students)
-    group.name <- character(n.students)
+    ## Calculating appraisal scores.
+    all.appraisal.score <- appraisal.scores[, 5:ncol(appraisal.scores)]
+    student.appraisal.score <- apply(all.appraisal.score, 1, mean, na.rm = TRUE)
+    ## Calculating final grades.
+    student.group.grade <- numeric(n.students)
+    student.final.grade <- numeric(n.students)
     for (i in 1:n.groups){
-        n.members <- nrow(group.info[[i]])
-        for (j in 1:n.members){
-            group.id[individual.df$id == group.info[[i]]$id[j]] <- group.ids[i]
-            group.name[individual.df$id == group.info[[i]]$id[j]] <- group.names[i]
-        }
+        group.name <- names(group.grades[i])
+        group.grade <- group.grades[[i]]
+        student.group.grade[student.group == group.name] <- group.grade
+        student.final.grade[student.group == group.name] <-
+            round(calculate.grades(group = group.grade,
+                                   individual = student.appraisal.score[student.group == group.name])
+                  , 1)
     }
-    individual.df$group.id <- group.id
-    individual.df$group.name <- group.name
-
-    ## Putting stream information into the individual data frame.
-    url <- paste(domain, "/api/v1", "courses", course.id, "group_categories", sep = "/")
-    stream.category.df <- get.data(url)
-    stream.category.id <- stream.category.df$id[stream.category.df$name == "Project Stream"]
-    url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
-    stream.df <- get.data(url)
-    stream.df <- stream.df[stream.df$group_category_id == stream.category.id, ]
-    stream.ids <- stream.df$id
-    n.streams <- nrow(stream.df)
-    stream.info <- vector(mode = "list", length = n.streams)
-    for (i in 1:n.streams){
-        url <- paste(domain, "/api/v1", "groups", stream.ids[i], "users", sep = "/")
-        stream.info[[i]] <- get.data(url)
-    }
-    stream.names <- stream.df$name
-    stream.id <- numeric(n.students)
-    stream.name <- character(n.students)
-    for (i in 1:n.streams){
-        n.members <- nrow(stream.info[[i]])
-        for (j in 1:n.members){
-            stream.id[individual.df$id == stream.info[[i]]$id[j]] <- stream.ids[i]
-            stream.name[individual.df$id == stream.info[[i]]$id[j]] <- stream.names[i]
-        }
-    }
-    individual.df$stream.id <- stream.id
-    individual.df$stream.name <- stream.name
-    ## Replacing NaN with NA in the peer-appraisal scores.
-    individual.df$ta.score[is.nan(individual.df$ta.score)] <- NA
-    final.grade <- rep(NA, n.students)
-    if (ta.only){
-        individual.df$group.grade <- numeric(n.students)
-    } else {
-        ## Putting the group grades into the individual data frame.
-        individual.df$group.grade[individual.df$group.name != "Absent"] <- c(group.grades[individual.df$group.name], recursive = TRUE)
-        ## Calculating final grades.
-        for (i in 1:n.groups){
-            if (group.names[i] != "Absent"){
-                final.grade[individual.df$group.name == group.names[i]] <-
-                    grade.fun(group.grades[[group.names[i]]],
-                              individual.df$ta.score[individual.df$group.name == group.names[i]])
-            }
-        }
-    }
-    individual.df$final.grade <- final.grade
+    ## Posting grades.
     if (is.null(post)){
-        print(individual.df[, c("name", "participation.score", "group.grade", "ta.score", "final.grade")])
+        print(data.frame(name = student.name, group = student.group.grade,
+                         individual = student.appraisal.score, final = student.final.grade)[order(student.final.grade), ])
         post <- readline(prompt = "Post grades? Type 'yes' to confirm.")
     } else {
         if (post){
@@ -409,16 +248,9 @@ calc.grades <- function(assignment.id, assignment.ta.id, group.grades = NULL, gr
     }
     if (post == "yes"){
         for (i in 1:n.students){
-            if (!ta.only){
-                if (!is.na(individual.df$final.grade[i])){
-                    post.grade(round(individual.df$final.grade[i], 1), assignment.id, individual.df$id[i], course.id, domain)
-                }
-            }
-            post.grade(round(100*individual.df$participation.score[i], 1), assignment.ta.id, individual.df$id[i], course.id, domain)
+            post.grade(student.final.grade[i], assignment.id, student.id[i], course.id, domain)
         }
     }
-    
-    list(individual = individual.df, pr = pr.df)
 }
 
 ## A function to randomly allocate students to groups.
