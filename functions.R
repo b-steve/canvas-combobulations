@@ -1,5 +1,6 @@
 library(httr)
 library(jsonlite)
+library(readxl)
 
 ## A function to get data from the Canvas API via a URL.
 get.data <- function(url){
@@ -397,59 +398,34 @@ team.count <- function(group.category.names, stream, course.id, domain = "https:
 }
 
 ## A function to summarise teammate-appraisals across multiple activities.
-summarise.ta <- function(assignment.ids, assignment.ta.ids, domain = "https://canvas.auckland.ac.nz", course.id){
-    ## Getting student list.
-    url <- paste(domain, "/api/v1", "courses", course.id, "users", sep = "/")
-    ta.df <- get.data(url)[, c("id", "name")]
-    pc.df <- ta.df
-    n.people <- nrow(ta.df)
-    n.assignments <- length(assignment.ta.ids)
-    ta.mat <- matrix(0, nrow = n.people, ncol = n.assignments)
-    pc.mat <- matrix(0, nrow = n.people, ncol = n.assignments)
-    for (i in 1:n.assignments){
-        ## Getting assignment information.
-        url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.ids[i], sep = "/")
-        assign.info <- get.data(url)
-        ## Getting group category ID.
-        group.category.id <- assign.info$group_category_id
-        ## Getting group category ID.
-        group.category.id <- assign.info$group_category_id
-        ## Getting group category information.
-        url <- paste(domain, "/api/v1", "courses", course.id, "groups", sep = "/")
-        group.category.df <- get.data(url)
-        group.category.df <- group.category.df[group.category.df$group_category_id == group.category.id, ]
-        n.groups <- nrow(group.category.df)
-        ## Getting information for the different groups.
-        group.ids <- group.category.df$id
-        n.groups <- nrow(group.category.df)
-        grades.list <- calc.grades(assignment.id = assignment.ids[i], assignment.ta.id = assignment.ta.ids[i],
-                                     group.grades = NULL, grade.fun = NULL, post = FALSE, domain = domain,
-                                   course.id = course.id)
-        individual.df <- grades.list$individual[, c("id", "stream.name", "name", "ta.score", "p.completed")]
-        ta.df <- merge(ta.df, individual.df[, c("id", "stream.name"[i == 1], "ta.score")], by = "id", all = TRUE, sort = FALSE)
-        pc.df <- merge(pc.df, individual.df[, c("id", "stream.name"[i == 1], "p.completed")], by = "id", all = TRUE, sort = FALSE)
-        names(ta.df)[3 + i] <- paste0("ta.score.", i)
-        names(pc.df)[3 + i] <- paste0("p.completed.", i)
+## dir: A directory including FeedbackFruits "analytics" .xslx files.
+summarise.ta <- function(dir, course.id, domain = "https://canvas.auckland.ac.nz"){
+    ## Identifying files with appraisal data.
+    all.files <- list.files(path = dir, pattern = ".xlsx")
+    activity.name <- unlist(strsplit(all.files, ".xlsx"))
+    n.activities <- length(activity.name)
+    ## Getting student list with stream allocations.
+    student.df <- get.streams(course.id)
+    n.students <- nrow(student.df)
+    ## Reading in appraisal data.
+    received.dfs <- vector(mode = "list", length = n.activities)
+    given.dfs <- vector(mode = "list", length = n.activities)
+    for (i in 1:n.activities){
+        received.dfs[[i]] <- as.data.frame(read_xlsx(paste0(dir, "/", all.files[i]), sheet = 6))
+        given.dfs[[i]] <- as.data.frame(read_xlsx(paste0(dir, "/", all.files[i]), sheet = 5))
     }
-    ta.df <- ta.df[apply(ta.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
-    pc.df <- pc.df[apply(ta.df, 1, function(x) any(!is.na(x[-(1:2)]))), ]
-    ta.df$average <- apply(ta.df[, -(1:3)], 1, mean, na.rm = TRUE)
-    list(pa = ta.df, pc = pc.df)
-}
-
-## Summarises individual grades.
-## ta: An object returned by calc.grades().
-## sort: "final" to sort by final grade, "ta" to sort by teammate
-##       appraisal, "none" to sort by student name.
-individual.summary <- function(ta, sort = "final"){
-    if (sort == "final"){
-       out <- ta$individual[order(ta$individual$final.grade, decreasing = TRUE),
-                      c(2, 3, 10, 13, 14)]
-    } else if (sort == "ta") {
-        out <- ta$individual[order(ta$individual$ta.score, decreasing = TRUE),
-                      c(2, 3, 10, 13, 14)]
-    } else {
-        out <- ta$individual[, c(2, 3, 10, 13, 14)]
+    ## Summarising appraisal data for each individual student.
+    received.scores <- matrix(0, nrow = n.students, ncol = n.activities)
+    colnames(received.scores) <- activity.name
+    rownames(received.scores) <- student.df$name
+    given.scores <- matrix(0, nrow = n.students, ncol = n.activities)
+    colnames(given.scores) <- activity.name
+    rownames(given.scores) <- student.df$name
+    for (i in 1:n.students){
+        student.name <- student.df[i, ]$name
+        received.scores[i, ] <- sapply(lapply(received.dfs, function(x) as.matrix(x[x[, 2] == student.name, 5:ncol(x)])), mean, na.rm = TRUE)
+        given.scores[i, ] <- sapply(lapply(given.dfs, function(x) as.matrix(x[x[, 2] == student.name, 8:ncol(x)])), mean, na.rm = TRUE)
     }
-    out
+    list(received = data.frame(student.df, received.scores, overall = apply(received.scores, 1, mean, na.rm = TRUE)),
+         given = data.frame(student.df, given.scores, overall = apply(given.scores, 1, mean, na.rm = TRUE)))
 }
