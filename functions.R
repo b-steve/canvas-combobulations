@@ -426,6 +426,14 @@ summarise.ta <- function(dir, course.id, domain = "https://canvas.auckland.ac.nz
         received.scores[i, ] <- sapply(lapply(received.dfs, function(x) as.matrix(x[x[, 2] == student.name, 5:ncol(x)])), mean, na.rm = TRUE)
         given.scores[i, ] <- sapply(lapply(given.dfs, function(x) as.matrix(x[x[, 2] == student.name, 8:ncol(x)])), mean, na.rm = TRUE)
     }
-    list(received = data.frame(student.df, received.scores, overall = apply(received.scores, 1, mean, na.rm = TRUE)),
+    list(received = data.frame(student.df, received.scores, overall = apply(received.scores, 1, mean, na.rm = TRUE),
+                               trim.overall = apply(received.scores, 1, trim.mean)),
          given = data.frame(student.df, given.scores, overall = apply(given.scores, 1, mean, na.rm = TRUE)))
+}
+
+## A function to drop off the lowest rating and compute a mean.
+trim.mean <- function(x){
+    n <- length(x)
+    x <- sort(x, decreasing = TRUE, na.last = TRUE)[-n]
+    mean(x, na.rm = TRUE)
 }
