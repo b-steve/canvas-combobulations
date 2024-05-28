@@ -200,7 +200,7 @@ copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams =
 ## post: Whether or not to post grades to Canvas; either TRUE or FALSE. If NULL, the user is prompted. 
 ## domain: The Canvas domain for your institution.
 ## course.id: The Canvas ID for the course.
-calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, grade.fun = NULL, post = NULL, course.id, domain = "https://canvas.auckland.ac.nz"){
+calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, grade.fun, post = NULL, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Extracting variables from appraisal scores.
     student.name <- appraisal.scores[, 2]
     student.group <- sapply(strsplit(appraisal.scores[, 1], ": "), function(x) x[2])
@@ -223,9 +223,9 @@ calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, gr
         group.grade <- group.grades[[i]]
         student.group.grade[student.group == group.name] <- group.grade
         student.final.grade[student.group == group.name] <-
-            round(calculate.grades(group = group.grade,
-                                   individual = student.appraisal.score[student.group == group.name])
-                  , 1)
+            round(grade.fun(group = group.grade,
+                            individual = student.appraisal.score[student.group == group.name])
+                , 1)
     }
     ## Posting grades.
     if (is.null(post)){
