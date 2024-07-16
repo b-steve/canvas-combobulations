@@ -128,10 +128,32 @@ assign.to.stream <- function(course.id, assignment.id, stream.name, domain = "ht
     system(cmd)
 }
 
+## A function to assign all streams to an assignment.
+assign.to.all.streams <- function(course.id, assignment.group.name, streams = c("Hihi", "Ruru", "Kaka", "Whio"),
+                                  domain = "https://canvas.auckland.ac.nz"){
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignment_groups", sep = "/")
+    ## Getting assignment group ID.
+    assignment.group.df <- get.data(url)
+    assignment.group.names <- sapply(strsplit(assignment.group.df$name, ":"), function(x) x[1])
+    assignment.group.id <- assignment.group.df$id[assignment.group.names == assignment.group.name]
+    ## Getting assignment data frame for those that belong to the group.
+    url <- paste(domain, "/api/v1", "courses", course.id, "assignments", sep = "/")
+    assignment.df <- get.data(url)
+    assignment.df <- assignment.df[assignment.df$assignment_group_id == assignment.group.id, ]
+    ## Assigning students to the right assignment based on their stream.
+    n.streams <- length(streams)
+    for (i in 1:n.streams){
+        ## Extracting the correct assignment ID.
+        assignment.id <- assignment.df$id[substr(assignment.df$name, 1, nchar(streams[i]) + 10) ==
+                                          paste0(streams[i], ": Activity")]
+        assign.to.stream(course.id, assignment.id, streams[i], domain)
+    }
+}
+
 
 ## Creates assignments for the four streams and ensures each is
 ## available to the correct students.
-create.assignment <- function(assignment.name, streams = c("Hihi", "Ruru", "Whio", "Kākā"), assignment.group.name, course.id, domain = "https://canvas.auckland.ac.nz"){
+create.assignment <- function(assignment.name, streams = c("Hihi", "Ruru", "Whio", "Kaka"), assignment.group.name, course.id, domain = "https://canvas.auckland.ac.nz"){
     ## Getting assignment group ID, if name is provided.
     url <- paste(domain, "/api/v1", "courses", course.id, "assignment_groups", sep = "/")
     assignment.group.df <- get.data(url)
@@ -155,9 +177,9 @@ create.assignment <- function(assignment.name, streams = c("Hihi", "Ruru", "Whio
 }
 
 ## A function to copy a Hihi assignment description and use it for
-## Ruru, Whio, and Kākā descriptions, creating these assignments if
+## Ruru, Whio, and Kaka descriptions, creating these assignments if
 ## necessary.
-copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams = c("Ruru", "Whio", "Kākā"), course.id, domain = "https://canvas.auckland.ac.nz"){
+copy.assignment <- function(assignment.id, orig.stream = "Hihi", other.streams = c("Ruru", "Whio", "Kaka"), course.id, domain = "https://canvas.auckland.ac.nz"){
     auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
     ## Getting information about original assignment.
     url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, sep = "/")
