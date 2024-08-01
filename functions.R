@@ -17,7 +17,10 @@ get.data <- function(url){
         header.split <- header.split[2:length(header.split)]
         header.links <- sapply(header.split, function(x) x[1])
         header.link.type <- sapply(strsplit(sapply(header.split, function(x) x[2]), "\""), function(x) x[2])
+        out <- out[, names(out) != "pronouns"]
         if (any(header.link.type == "next")){
+            out.tmp <- get.data(header.links[header.link.type == "next"])
+            out.tmp <- out.tmp[, names(out.tmp) != "pronouns"]
             out <- rbind(out, get.data(header.links[header.link.type == "next"]))
         }
     }
