@@ -252,7 +252,7 @@ calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, gr
                             individual = student.appraisal.score[student.group == group.name])
                 , 1)
     }
-    out <- data.frame(name = student.name, group = student.group.grade,
+    out <- data.frame(name = student.name, group.name = student.group, group = student.group.grade,
                       individual = student.appraisal.score, final = student.final.grade)[order(student.final.grade), ]
     ## Posting grades.
     if (is.null(post)){
