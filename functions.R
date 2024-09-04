@@ -252,10 +252,11 @@ calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, gr
                             individual = student.appraisal.score[student.group == group.name])
                 , 1)
     }
+    out <- data.frame(name = student.name, group = student.group.grade,
+                      individual = student.appraisal.score, final = student.final.grade)[order(student.final.grade), ]
     ## Posting grades.
     if (is.null(post)){
-        print(data.frame(name = student.name, group = student.group.grade,
-                         individual = student.appraisal.score, final = student.final.grade)[order(student.final.grade), ])
+        print(out)
         post <- readline(prompt = "Post grades? Type 'yes' to confirm.")
     } else {
         if (post){
@@ -267,6 +268,7 @@ calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, gr
             post.grade(student.final.grade[i], assignment.id, student.id[i], course.id, domain)
         }
     }
+    out
 }
 
 ## A function to randomly allocate students to groups.
@@ -449,11 +451,13 @@ summarise.ta <- function(dir, course.id, domain = "https://canvas.auckland.ac.nz
     for (i in 1:n.students){
         student.name <- student.df[i, ]$name
         received.scores[i, ] <- sapply(lapply(received.dfs, function(x) as.matrix(x[x[, 2] == student.name, 5:ncol(x)])), mean, na.rm = TRUE)
-        given.scores[i, ] <- sapply(lapply(given.dfs, function(x) as.matrix(x[x[, 2] == student.name, 8:ncol(x)])), mean, na.rm = TRUE)
+        given.scores[i, ] <- sapply(lapply(given.dfs, function(x) as.numeric(as.matrix(x[x[, 2] == student.name, 8:ncol(x)]))), mean, na.rm = TRUE)
     }
-    list(received = data.frame(student.df, received.scores, overall = apply(received.scores, 1, mean, na.rm = TRUE),
-                               trim.overall = apply(received.scores, 1, trim.mean)),
-         given = data.frame(student.df, given.scores, overall = apply(given.scores, 1, mean, na.rm = TRUE)))
+    out <- list(received = data.frame(student.df, received.scores, overall = apply(received.scores, 1, mean, na.rm = TRUE),
+                                      trim.overall = apply(received.scores, 1, trim.mean)),
+                given = data.frame(student.df, given.scores, overall = apply(given.scores, 1, mean, na.rm = TRUE)))
+    rownames(out$received) <- rownames(out$given) <- NULL
+    out
 }
 
 ## A function to drop off the lowest rating and compute a mean.
