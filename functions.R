@@ -80,13 +80,15 @@ create.groups <- function(group.names, group.category.name, course.id, domain = 
     }
 }
 
-## A function to add a member to a group.
+## A function to add member(s) to a group.
 add.member <- function(group.id, user.id, domain = "https://canvas.auckland.ac.nz"){
-    url <- paste(domain, "/api/v1", "groups", group.id, "memberships", sep = "/")
-    user.arg <- paste0("\'user_id=", user.id, "\'")
-    auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
-    cmd <- paste("curl", url, "-F", user.arg, "-H", auth.arg, "> /dev/null")
-    system(cmd)
+    for (i in 1:length(user.id)){
+        url <- paste(domain, "/api/v1", "groups", group.id, "memberships", sep = "/")
+        user.arg <- paste0("\'user_id=", user.id[i], "\'")
+        auth.arg <- paste0("\'Authorization: Bearer ", token, "\'")
+        cmd <- paste("curl", url, "-F", user.arg, "-H", auth.arg, "> /dev/null")
+        system(cmd)
+    }
 }
 
 post.grade <- function(grade, assignment.id, user.id, course.id, domain = "https://canvas.auckland.ac.nz"){
@@ -117,7 +119,7 @@ assign.to.stream <- function(course.id, assignment.id, stream.name, domain = "ht
     stream.name.sanitised <- gsub("ā", "a", stream.name)
     ## Getting stream information.
     stream.df <- get.streams(course.id, domain)
-    student.id <- stream.df$id[stream.df$stream == stream.name.sanitised]
+    student.id <- stream.df$id[stream.df$stream %in% stream.name.sanitised]
     ## Creating overrides for the students in the stream.
     url <- paste(domain, "/api/v1", "courses", course.id, "assignments", assignment.id, "overrides", sep = "/") 
     F.ids.arg <- paste(paste0("-F \'assignment_override[student_ids][]=" , student.id, "\'"), collapse = " ")
@@ -235,7 +237,11 @@ calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, gr
     ## Getting the user IDs, rather than the SIS user IDs.
     user.df <- get.user.data(course.id, domain)
     for (i in 1:n.students){
-        student.id[i] <- user.df$id[user.df$name == student.name[i]]
+        if (any(user.df$name == student.name[i])){
+            student.id[i] <- user.df$id[user.df$name == student.name[i]]
+        } else {
+            student.id[i] <- NA
+        }
     }
     ## Calculating appraisal scores.
     all.appraisal.score <- appraisal.scores[, 5:ncol(appraisal.scores)]
@@ -438,24 +444,36 @@ summarise.ta <- function(dir, course.id, domain = "https://canvas.auckland.ac.nz
     received.dfs <- vector(mode = "list", length = n.activities)
     given.dfs <- vector(mode = "list", length = n.activities)
     for (i in 1:n.activities){
-        received.dfs[[i]] <- as.data.frame(read_xlsx(paste0(dir, "/", all.files[i]), sheet = 6))
-        given.dfs[[i]] <- as.data.frame(read_xlsx(paste0(dir, "/", all.files[i]), sheet = 5))
+        received.dfs[[i]] <- as.data.frame(read_xlsx(paste0(dir, "/", all.files[i]), sheet = 8))
+        given.dfs[[i]] <- as.data.frame(read_xlsx(paste0(dir, "/", all.files[i]), sheet = 7))
     }
     ## Summarising appraisal data for each individual student.
     received.scores <- matrix(0, nrow = n.students, ncol = n.activities)
     colnames(received.scores) <- activity.name
     rownames(received.scores) <- student.df$name
     given.scores <- matrix(0, nrow = n.students, ncol = n.activities)
+    all.given.scores <- vector(mode = "list", length = n.students)
     colnames(given.scores) <- activity.name
     rownames(given.scores) <- student.df$name
+    names(all.given.scores) <- student.df$name
     for (i in 1:n.students){
         student.name <- student.df[i, ]$name
         received.scores[i, ] <- sapply(lapply(received.dfs, function(x) as.matrix(x[x[, 2] == student.name, 5:ncol(x)])), mean, na.rm = TRUE)
         given.scores[i, ] <- sapply(lapply(given.dfs, function(x) as.numeric(as.matrix(x[x[, 2] == student.name, 8:ncol(x)]))), mean, na.rm = TRUE)
+        tmp.all.given.scores <- lapply(given.dfs, function(x){
+            scores <- as.matrix(x[x[, 2] == student.name, 8:ncol(x)])
+            colnames(scores) <- NULL
+            class(scores) <- "numeric"
+            apply(scores, 1, mean, na.rm = TRUE)
+        })
+        tmp.all.given.scores <- unlist(tmp.all.given.scores)
+        tmp.all.given.scores <- tmp.all.given.scores[!is.na(tmp.all.given.scores)]
+        all.given.scores[[i]] <- tmp.all.given.scores
     }
     out <- list(received = data.frame(student.df, received.scores, overall = apply(received.scores, 1, mean, na.rm = TRUE),
                                       trim.overall = apply(received.scores, 1, trim.mean)),
-                given = data.frame(student.df, given.scores, overall = apply(given.scores, 1, mean, na.rm = TRUE)))
+                given = data.frame(student.df, given.scores, overall = apply(given.scores, 1, mean, na.rm = TRUE)),
+                all.given = all.given.scores)
     rownames(out$received) <- rownames(out$given) <- NULL
     out
 }
