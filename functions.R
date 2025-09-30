@@ -244,7 +244,8 @@ calc.grades <- function(assignment.id, group.grades = NULL, appraisal.scores, gr
         }
     }
     ## Calculating appraisal scores.
-    all.appraisal.score <- appraisal.scores[, 5:ncol(appraisal.scores)]
+    all.appraisal.score <- as.matrix(appraisal.scores[, 5:ncol(appraisal.scores)])
+    class(all.appraisal.score) <- "numeric"
     student.appraisal.score <- apply(all.appraisal.score, 1, mean, na.rm = TRUE)
     ## Calculating final grades.
     student.group.grade <- numeric(n.students)
