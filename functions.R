@@ -459,7 +459,11 @@ summarise.ta <- function(dir, course.id, domain = "https://canvas.auckland.ac.nz
     names(all.given.scores) <- student.df$name
     for (i in 1:n.students){
         student.name <- student.df[i, ]$name
-        received.scores[i, ] <- sapply(lapply(received.dfs, function(x) as.matrix(x[x[, 2] == student.name, 5:ncol(x)])), mean, na.rm = TRUE)
+        received.scores[i, ] <- sapply(lapply(received.dfs, function(x){
+            tmp <- as.matrix(x[x[, 2] == student.name, 5:ncol(x)])
+            class(tmp) <- "numeric"
+            tmp
+          }), mean, na.rm = TRUE)
         given.scores[i, ] <- sapply(lapply(given.dfs, function(x) as.numeric(as.matrix(x[x[, 2] == student.name, 8:ncol(x)]))), mean, na.rm = TRUE)
         tmp.all.given.scores <- lapply(given.dfs, function(x){
             scores <- as.matrix(x[x[, 2] == student.name, 8:ncol(x)])
