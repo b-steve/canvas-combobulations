@@ -489,3 +489,30 @@ trim.mean <- function(x){
     x <- sort(x, decreasing = TRUE, na.last = TRUE)[-n]
     mean(x, na.rm = TRUE)
 }
+
+## Gather feedback written to and received by a student.
+## name: The student's name.
+## dir: A directory including FeedbackFruits "analytics" .xslx files.
+## sheet: The sheet in which open-ended feedback appears.
+## col: The column in which open-ended feedback appears.
+gather.feedback <- function(name, dir, sheet = "2. Reviews"){
+    ## Identifying files with appraisal data.
+    all.files <- list.files(path = dir, pattern = ".xlsx")
+    activity.name <- unlist(strsplit(all.files, ".xlsx"))
+    n.activities <- length(activity.name)
+    ## Reading in data.
+    received.df <- data.frame(activity = character(0), reviewer = character(0), feedback = character(0))
+    given.df <- data.frame(activity = character(0), reviewee = character(0), feedback = character(0))
+    for (i in 1:n.activities){
+        reviews.tmp <- read_xlsx(paste0(dir, "/", all.files[i]), sheet = sheet)
+        received.tmp <- reviews.tmp[reviews.tmp$"Reviewed work of student name" == name, ]
+        given.tmp <- reviews.tmp[reviews.tmp$"Reviewer name" == name, ]
+        received.df <- rbind(received.df, data.frame(activity = rep(activity.name[i], nrow(received.tmp)),
+                                                     reviewer = received.tmp$"Reviewer name",
+                                                     feedback = received.tmp$"Review"))
+        given.df <- rbind(given.df, data.frame(activity = rep(activity.name[i], nrow(given.tmp)),
+                                               reviewee = given.tmp$"Reviewed work of student name",
+                                               feedback = given.tmp$"Review"))
+    }
+    list(received = received.df, given = given.df)
+}
